@@ -14,8 +14,13 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <filesystem>
+
+
 
 using namespace ns3;
+namespace fs = std::filesystem;
+
 
 struct NeighborInfo {
     uint32_t asn;
@@ -31,6 +36,8 @@ struct InterfacesInfo{
 // 初期設定のアドレスとマスク
 ns3::Ipv4Address baseAddress("10.0.0.0");
 ns3::Ipv4Mask netMask("255.255.255.252");
+
+std::string targetdir = "./ASrouteInfo";
 
 
 std::map<uint32_t, std::vector<NeighborInfo>> ReadTopologyFromFile(const std::string& filename) {
@@ -77,6 +84,85 @@ std::map<uint32_t, std::vector<NeighborInfo>> ReadTopologyFromFile(const std::st
     return topology;
 }
 
+void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, Ptr<Node>>& asNodes, const std::map<uint32_t, std::map<uint32_t, InterfacesInfo>>& asinterfaces) {
+    if (!fs::exists(targetdir) || !fs::is_directory(targetdir)) {
+        std::cerr << "Invalid target directory: " << targetdir << std::endl;
+        return;
+    }
+
+    for (const auto& file : fs::directory_iterator(targetdir)) {
+        if (!fs::is_regular_file(file.status())) {
+            continue;
+        }
+
+        std::ifstream targetFile(file.path());
+        if (!targetFile.is_open()) {
+            std::cerr << "Failed to open target file: " << file.path() << std::endl;
+            continue;
+        }
+
+        std::string line;
+
+        std::string aspart = file.path().stem().string();
+        std::cout << "aspart = [" << aspart.substr(2) << "]" << std::endl;
+        uint32_t asn = std::stoul(aspart.substr(2));
+
+        // 1. ASノードの存在チェック
+        auto nodeIt = asNodes.find(asn);
+        if (nodeIt == asNodes.end()) {
+            std::cerr << "Warning: AS " << asn << " found in route files but not in topology. Skipping." << std::endl;
+            continue;
+        }
+
+        Ptr<Ipv4> ipv4 = asNodes.at(asn)->GetObject<Ipv4>();
+        
+        Ipv4StaticRoutingHelper staticRoutingHelper;
+        Ptr<Ipv4StaticRouting> node = staticRoutingHelper.GetStaticRouting(ipv4);
+
+        while (std::getline(targetFile, line)) {
+            if (line.empty() || line[0] == 'd') {
+                continue; 
+            }
+
+            size_t first_comma_pos = line.find(',');
+            std::string aspart = line.substr(0, first_comma_pos);
+            
+            uint32_t dst_asn = std::stoul(aspart);
+            
+            size_t second_comma_pos = line.find(',', first_comma_pos + 1);
+            std::string ip_part = line.substr(first_comma_pos + 1, second_comma_pos - first_comma_pos - 1);
+            Ipv4Address ipv4(ip_part.c_str());
+
+            size_t third_comma_pos = line.find(',', second_comma_pos + 1);
+            std::string mask_part = line.substr(second_comma_pos + 1, third_comma_pos - second_comma_pos - 1);
+            Ipv4Mask mask(mask_part.c_str());
+
+            std::string nexthop_part = line.substr(third_comma_pos + 1);
+            std::cout << "src_asn = " << asn << "dst_asn = " << dst_asn << "nexthop_part = [" << nexthop_part << "]" << std::endl;
+            uint32_t nexthop_asn = std::stoul(nexthop_part);
+
+                asn = 12779;
+    nexthop_asn = 29513;
+    std::cout << "src=" << asn
+          << " nexthop=" << nexthop_asn
+          << std::endl;
+
+std::cout << "asinterfaces contains src: "
+          << asinterfaces.contains(asn)
+          << std::endl;
+
+std::cout << "src contains nexthop: "
+          << (asinterfaces.contains(asn)
+              && asinterfaces.at(asn).contains(nexthop_asn))
+          << std::endl;
+
+            node->AddNetworkRouteTo(ipv4, mask, asinterfaces.at(nexthop_asn).at(asn).address, asinterfaces.at(asn).at(nexthop_asn).interfaceId);
+
+
+        }
+
+    }
+}
 
 int main (int argc, char *argv[])
 {
@@ -113,7 +199,7 @@ int main (int argc, char *argv[])
   
   std::map<uint32_t, std::map<uint32_t, InterfacesInfo>> asinterfaces;
   ns3::Ipv4AddressHelper ipv4;
-  Ipv4StaticRoutingHelper staticRoutingHelper;
+
 
 
   uint32_t link_num = 0;
@@ -176,10 +262,18 @@ int main (int argc, char *argv[])
 
             baseAddress = ns3::Ipv4Address(baseAddress.Get() + 4);
         }
+
+
         as_num++;
         std::cout << "Number of AS nodes: " << as_num << std::endl;
     }
 
+
+
+
+
+
+    routingTableGenerator(targetdir, asNodes, asinterfaces);
 
     Simulator::Stop(Seconds(simTime));
     Simulator::Run();
