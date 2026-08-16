@@ -104,7 +104,6 @@ void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, P
         std::string line;
 
         std::string aspart = file.path().stem().string();
-        std::cout << "aspart = [" << aspart.substr(2) << "]" << std::endl;
         uint32_t asn = std::stoul(aspart.substr(2));
 
         // 1. ASノードの存在チェック
@@ -138,31 +137,129 @@ void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, P
             Ipv4Mask mask(mask_part.c_str());
 
             std::string nexthop_part = line.substr(third_comma_pos + 1);
-            std::cout << "src_asn = " << asn << "dst_asn = " << dst_asn << "nexthop_part = [" << nexthop_part << "]" << std::endl;
             uint32_t nexthop_asn = std::stoul(nexthop_part);
-
-                asn = 12779;
-    nexthop_asn = 29513;
-    std::cout << "src=" << asn
-          << " nexthop=" << nexthop_asn
-          << std::endl;
-
-std::cout << "asinterfaces contains src: "
-          << asinterfaces.contains(asn)
-          << std::endl;
-
-std::cout << "src contains nexthop: "
-          << (asinterfaces.contains(asn)
-              && asinterfaces.at(asn).contains(nexthop_asn))
-          << std::endl;
 
             node->AddNetworkRouteTo(ipv4, mask, asinterfaces.at(nexthop_asn).at(asn).address, asinterfaces.at(asn).at(nexthop_asn).interfaceId);
 
-
         }
+
+    // AS13037からAS112の送信元リンクへの戻り経路
+        if (asn == 13037)
+        {
+            Ipv4Mask linkMask("255.255.255.252");
+
+            Ipv4Address sourceAddress =
+                asinterfaces.at(112).at(7195).address;
+
+            Ipv4Address sourceNetwork =
+                sourceAddress.CombineMask(linkMask);
+
+            std::cout
+                << "Return route on AS13037: "
+                << sourceNetwork
+                << "/30 via "
+                << asinterfaces.at(7195).at(13037).address
+                << std::endl;
+
+            node->AddNetworkRouteTo(
+                sourceNetwork,
+                linkMask,
+                asinterfaces.at(7195).at(13037).address,
+                asinterfaces.at(13037).at(7195).interfaceId
+            );
+        }
+    }
+}
+
+
+void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node)
+{
+    std::string announcements_line;
+    std::ifstream address_file("announcements_origin.txt");
+
+    if (!address_file.is_open()) {
+        std::cerr << "Failed to open annoouncements_origin.txt" << std::endl;
+        return;
+    }
+
+    while (std::getline(address_file, announcements_line))
+    {
+        if (announcements_line.empty() || announcements_line[0] == 'S') {
+            continue;
+        }
+
+        size_t space_pos = announcements_line.find(' ');
+
+        if (space_pos == std::string::npos) {
+            std::cerr << "Invalid line: ["
+                      << announcements_line
+                      << "]"
+                      << std::endl;
+            continue;
+        }
+
+        std::string aspart =
+            announcements_line.substr(0, space_pos);
+    
+        uint32_t fileAsn = std::stoul(aspart);
+
+        if (fileAsn != asn) {
+            continue;
+        }
+
+        // 数字以外が来たときの確認
+        try
+        {
+            uint32_t fileAsn = std::stoul(aspart);
+
+            if (asn != fileAsn) {
+                continue;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "stoul failed: line=["
+                      << announcements_line
+                      << "] aspart=["
+                      << aspart
+                      << "]"
+                      << std::endl;
+
+            continue;
+        }
+
+        size_t slash_pos = announcements_line.find('/');
+
+        if (slash_pos == std::string::npos) {
+            std::cerr << "Invalid prefix line: ["
+                      << announcements_line
+                      << "]"
+                      << std::endl;
+            continue;
+        }
+
+        std::string myip_part =
+            announcements_line.substr(
+                space_pos + 1,
+                slash_pos - space_pos - 1);
+
+        Ipv4Address ipv4(myip_part.c_str());
+        Ipv4Address hostipv4(ipv4.Get() + 1);
+
+        std::string mymask_part =
+            "/" + announcements_line.substr(slash_pos + 1);
+
+        Ipv4Mask mask(mymask_part.c_str());
+
+        node->AddAddress(
+            0,
+            Ipv4InterfaceAddress(
+                hostipv4,
+                mask));
 
     }
 }
+
 
 int main (int argc, char *argv[])
 {
@@ -177,6 +274,14 @@ int main (int argc, char *argv[])
     "ChecksumEnabled",
     BooleanValue(true));
 
+
+
+    uint32_t testSrcAs = 0;
+    uint32_t testDstAs = 0;
+    Ipv4Address testDstAddress;
+    Ipv4Address testSrcAddress;
+    
+    bool testLinkFound = false;
 
   auto topology = ReadTopologyFromFile("as_topology.txt");
   std::map<uint32_t, Ptr<Node>> asNodes;
@@ -202,8 +307,6 @@ int main (int argc, char *argv[])
 
 
 
-  uint32_t link_num = 0;
-  uint32_t as_num = 0;
   for (const auto& [asn, neighbors] : topology) {
 
       for (const auto& neighbor : neighbors) {
@@ -225,8 +328,6 @@ int main (int argc, char *argv[])
             NetDeviceContainer devices = p2p.Install(link);
 
             createdLinks.insert({small_asn, large_asn});
-            link_num++;
-            std::cout << "Number of links: " << link_num << std::endl;
 
             ipv4.SetBase(baseAddress, netMask);
             // assignメソッドを使わず、自分で実装 (assignはIPの重複確認の処理が入っているが、時間がかかるので不採用)
@@ -261,19 +362,47 @@ int main (int argc, char *argv[])
             asinterfaces[neighbor_asn][asn] = {if2, address2, netMask};
 
             baseAddress = ns3::Ipv4Address(baseAddress.Get() + 4);
+
         }
 
 
-        as_num++;
-        std::cout << "Number of AS nodes: " << as_num << std::endl;
     }
 
-
-
-
-
+    for (const auto& [asn, node] : asNodes)
+    {
+        Ptr<Ipv4> ipv4Node = node->GetObject<Ipv4>();
+        SetHostaddress(asn, ipv4Node);
+        
+    }
 
     routingTableGenerator(targetdir, asNodes, asinterfaces);
+
+
+
+    // ==========================
+    // Ping test
+    // ==========================
+
+    uint32_t pingSrcAs = 112;  // Pingを実行するASは固定
+
+    Ipv4Address pingDst("51.148.0.1");
+
+    std::cout << "\n==============================" << std::endl;
+    std::cout << "Ping test" << std::endl;
+    std::cout << "Destination : " << pingDst << std::endl;
+    std::cout << "==============================" << std::endl;
+
+    PingHelper ping(pingDst);
+
+
+    ApplicationContainer pingApp =
+        ping.Install(asNodes.at(pingSrcAs));
+
+    pingApp.Start(Seconds(1.0));
+    pingApp.Stop(Seconds(9.0));
+
+    // pcap出力
+    // p2p.EnablePcapAll("as-topology");
 
     Simulator::Stop(Seconds(simTime));
     Simulator::Run();
