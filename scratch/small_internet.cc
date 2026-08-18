@@ -33,6 +33,13 @@ struct InterfacesInfo{
     Ipv4Mask mask;
 };
 
+
+struct ASPrefixInfo
+{
+    Ipv4Address network;
+    Ipv4Mask mask;
+};
+
 // 初期設定のアドレスとマスク
 ns3::Ipv4Address baseAddress("10.0.0.0");
 ns3::Ipv4Mask netMask("255.255.255.252");
@@ -168,11 +175,91 @@ void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, P
                 asinterfaces.at(13037).at(7195).interfaceId
             );
         }
+
+        if (asn == 132215)
+        {
+            Ipv4Mask linkMask("255.255.255.252");
+
+            Ipv4Address sourceAddress =
+                asinterfaces.at(10010).at(8220).address;
+
+            Ipv4Address sourceNetwork =
+                sourceAddress.CombineMask(linkMask);
+
+            std::cout
+                << "Return route on AS13037: "
+                << sourceNetwork
+                << "/30 via "
+                << asinterfaces.at(9583).at(132215).address
+                << std::endl;
+
+            node->AddNetworkRouteTo(
+                sourceNetwork,
+                linkMask,
+                asinterfaces.at(9583).at(132215).address,
+                asinterfaces.at(132215).at(9583).interfaceId
+            );
+        }
+
+        if (asn == 9583)
+        {
+            Ipv4Mask linkMask("255.255.255.252");
+
+            Ipv4Address sourceAddress =
+                asinterfaces.at(10010).at(8220).address;
+
+            Ipv4Address sourceNetwork =
+                sourceAddress.CombineMask(linkMask);
+
+            std::cout
+                << "Return route on AS13037: "
+                << sourceNetwork
+                << "/30 via "
+                << asinterfaces.at(7473).at(9583).address
+                << std::endl;
+
+            node->AddNetworkRouteTo(
+                sourceNetwork,
+                linkMask,
+                asinterfaces.at(7473).at(9583).address,
+                asinterfaces.at(9583).at(7473).interfaceId
+            );
+        }
+
+
+        if (asn == 7473)
+        {
+            Ipv4Mask linkMask("255.255.255.252");
+
+            Ipv4Address sourceAddress =
+                asinterfaces.at(10010).at(8220).address;
+
+            Ipv4Address sourceNetwork =
+                sourceAddress.CombineMask(linkMask);
+
+            std::cout
+                << "Return route on AS13037: "
+                << sourceNetwork
+                << "/30 via "
+                << asinterfaces.at(8220).at(7473).address
+                << std::endl;
+
+            node->AddNetworkRouteTo(
+                sourceNetwork,
+                linkMask,
+                asinterfaces.at(8220).at(7473).address,
+                asinterfaces.at(7473).at(8220).interfaceId
+            );
+        }
+
+
+
     }
 }
 
 
-void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node)
+void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node, 
+std::map<uint32_t, ASPrefixInfo>& asPrefixes)
 {
     std::string announcements_line;
     std::ifstream address_file("announcements_origin.txt");
@@ -255,16 +342,98 @@ void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node)
             0,
             Ipv4InterfaceAddress(
                 hostipv4,
-                mask));
+                Ipv4Mask("255.255.255.255")));
+
+        asPrefixes[asn] = {
+            ipv4,
+            mask
+        };
 
     }
+}
+
+
+void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint32_t, Ptr<Node>>& asNodes, std::map<uint32_t, ASPrefixInfo>& asPrefixes) {
+    
+    CsmaHelper csma;
+    csma.SetChannelAttribute("DataRate", StringValue("100Mbps"));
+    csma.SetChannelAttribute("Delay", TimeValue(MilliSeconds(1)));
+
+
+
+
+    for(uint32_t asn : tapnode) {
+      auto it = asNodes.find(asn);
+      if (it == asNodes.end()) {
+            std::cerr
+            << "Tap target AS does not exist: AS"
+            << asn
+            << std::endl;
+
+            continue;
+      }
+        ASPrefixInfo prefix = asPrefixes.at(asn);
+        Ipv4Address asAddress(prefix.network.Get() + 2);
+
+      Ptr<Node> node = asNodes.at(asn);
+
+      Ptr<Node> tapNode = CreateObject<Node>();
+      NodeContainer tapContainer;
+      tapContainer.Add(tapNode);
+      tapContainer.Add(node);
+      NetDeviceContainer tapdevice = csma.Install(tapContainer);
+      
+        Ptr<Ipv4> asIpv4 = node->GetObject<Ipv4>();
+
+        int32_t ifId = asIpv4->GetInterfaceForDevice(tapdevice.Get(1));
+
+        if (ifId == -1)
+        {
+            ifId = asIpv4->AddInterface(tapdevice.Get(1));
+        }
+
+        asIpv4->AddAddress(
+            ifId,
+            Ipv4InterfaceAddress(
+                asAddress,
+                prefix.mask));
+
+        asIpv4->SetMetric(ifId, 1);
+        asIpv4->SetUp(ifId);
+
+        std::string tapName = "tap-as" + std::to_string(asn);
+        TapBridgeHelper tapBridge;
+
+        tapBridge.SetAttribute(
+            "Mode",
+            StringValue("UseBridge"));
+
+        tapBridge.SetAttribute(
+            "DeviceName",
+            StringValue(tapName));
+
+        tapBridge.Install(
+            tapNode,
+            tapdevice.Get(0));
+
+
+        std::cout
+        << "Tap connected: AS"
+        << asn
+        << " tap="
+        << tapName
+        << " AS-access-IP="
+        << asAddress
+        << std::endl;
+    }
+
 }
 
 
 int main (int argc, char *argv[])
 {
   // uint32_t nNodes = 4996;
-  double simTime = 10.0;
+  double simTime = 300.0;
 
   GlobalValue::Bind(
     "SimulatorImplementationType",
@@ -304,6 +473,15 @@ int main (int argc, char *argv[])
   
   std::map<uint32_t, std::map<uint32_t, InterfacesInfo>> asinterfaces;
   ns3::Ipv4AddressHelper ipv4;
+  std::map<uint32_t, ASPrefixInfo> asPrefixes;
+
+  std::set<uint32_t> tapnode {
+    10010,
+    4755,
+    38091
+  };
+
+
 
 
 
@@ -371,21 +549,22 @@ int main (int argc, char *argv[])
     for (const auto& [asn, node] : asNodes)
     {
         Ptr<Ipv4> ipv4Node = node->GetObject<Ipv4>();
-        SetHostaddress(asn, ipv4Node);
+        SetHostaddress(asn, ipv4Node, asPrefixes);
         
     }
 
     routingTableGenerator(targetdir, asNodes, asinterfaces);
 
+    SetupTapConnections(tapnode, asNodes, asPrefixes);
 
 
     // ==========================
     // Ping test
     // ==========================
 
-    uint32_t pingSrcAs = 112;  // Pingを実行するASは固定
+    uint32_t pingSrcAs = 10010;  // Pingを実行するASは固定
 
-    Ipv4Address pingDst("51.148.0.1");
+    Ipv4Address pingDst("1.6.136.1");
 
     std::cout << "\n==============================" << std::endl;
     std::cout << "Ping test" << std::endl;
