@@ -146,109 +146,109 @@ void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, P
             std::string nexthop_part = line.substr(third_comma_pos + 1);
             uint32_t nexthop_asn = std::stoul(nexthop_part);
 
-            node->AddNetworkRouteTo(ipv4, mask, asinterfaces.at(nexthop_asn).at(asn).address, asinterfaces.at(asn).at(nexthop_asn).interfaceId);
+            node->AddNetworkRouteToFast(ipv4, mask, asinterfaces.at(nexthop_asn).at(asn).address, asinterfaces.at(asn).at(nexthop_asn).interfaceId);
 
         }
 
-    // AS13037からAS112の送信元リンクへの戻り経路
-        if (asn == 13037)
+        if (asn == 23969)
         {
             Ipv4Mask linkMask("255.255.255.252");
 
             Ipv4Address sourceAddress =
-                asinterfaces.at(112).at(7195).address;
+                asinterfaces.at(1).at(9829).address;
 
             Ipv4Address sourceNetwork =
                 sourceAddress.CombineMask(linkMask);
 
             std::cout
-                << "Return route on AS13037: "
+                << "Return route on AS1: "
                 << sourceNetwork
                 << "/30 via "
-                << asinterfaces.at(7195).at(13037).address
+                << asinterfaces.at(4651).at(23969).address
                 << std::endl;
 
-            node->AddNetworkRouteTo(
+            node->AddNetworkRouteToFast(
                 sourceNetwork,
                 linkMask,
-                asinterfaces.at(7195).at(13037).address,
-                asinterfaces.at(13037).at(7195).interfaceId
+                asinterfaces.at(4651).at(23969).address,
+                asinterfaces.at(23969).at(4651).interfaceId
             );
         }
 
-        if (asn == 132215)
+        if (asn == 4651)
         {
             Ipv4Mask linkMask("255.255.255.252");
 
             Ipv4Address sourceAddress =
-                asinterfaces.at(10010).at(8220).address;
+                asinterfaces.at(1).at(9829).address;
 
             Ipv4Address sourceNetwork =
                 sourceAddress.CombineMask(linkMask);
 
             std::cout
-                << "Return route on AS13037: "
+                << "Return route on AS1: "
                 << sourceNetwork
                 << "/30 via "
-                << asinterfaces.at(9583).at(132215).address
+                << asinterfaces.at(6453).at(4651).address
                 << std::endl;
 
-            node->AddNetworkRouteTo(
+            node->AddNetworkRouteToFast(
                 sourceNetwork,
                 linkMask,
-                asinterfaces.at(9583).at(132215).address,
-                asinterfaces.at(132215).at(9583).interfaceId
-            );
-        }
-
-        if (asn == 9583)
-        {
-            Ipv4Mask linkMask("255.255.255.252");
-
-            Ipv4Address sourceAddress =
-                asinterfaces.at(10010).at(8220).address;
-
-            Ipv4Address sourceNetwork =
-                sourceAddress.CombineMask(linkMask);
-
-            std::cout
-                << "Return route on AS13037: "
-                << sourceNetwork
-                << "/30 via "
-                << asinterfaces.at(7473).at(9583).address
-                << std::endl;
-
-            node->AddNetworkRouteTo(
-                sourceNetwork,
-                linkMask,
-                asinterfaces.at(7473).at(9583).address,
-                asinterfaces.at(9583).at(7473).interfaceId
+                asinterfaces.at(6453).at(4651).address,
+                asinterfaces.at(4651).at(6453).interfaceId
             );
         }
 
 
-        if (asn == 7473)
+        if (asn == 6453)
         {
             Ipv4Mask linkMask("255.255.255.252");
 
             Ipv4Address sourceAddress =
-                asinterfaces.at(10010).at(8220).address;
+                asinterfaces.at(1).at(9829).address;
 
             Ipv4Address sourceNetwork =
                 sourceAddress.CombineMask(linkMask);
 
             std::cout
-                << "Return route on AS13037: "
+                << "Return route on AS1: "
                 << sourceNetwork
                 << "/30 via "
-                << asinterfaces.at(8220).at(7473).address
+                << asinterfaces.at(9829).at(6453).address
                 << std::endl;
 
-            node->AddNetworkRouteTo(
+            node->AddNetworkRouteToFast(
                 sourceNetwork,
                 linkMask,
-                asinterfaces.at(8220).at(7473).address,
-                asinterfaces.at(7473).at(8220).interfaceId
+                asinterfaces.at(9829).at(6453).address,
+                asinterfaces.at(6453).at(9829).interfaceId
+            );
+        }
+
+
+        if (asn == 9829)
+        {
+            Ipv4Mask linkMask("255.255.255.252");
+
+            Ipv4Address sourceAddress =
+                asinterfaces.at(1).at(9829).address;
+
+            Ipv4Address sourceNetwork =
+                sourceAddress.CombineMask(linkMask);
+
+            std::cout
+                << "Return route on AS1: "
+                << sourceNetwork
+                << "/30 via "
+                << asinterfaces.at(1).at(9829).address
+                << std::endl;
+
+            node->AddNetworkRouteToFast(
+                sourceNetwork,
+                linkMask,
+                asinterfaces.at(1).at(9829).address,
+                asinterfaces.at(9829).at(1).interfaceId
             );
         }
 
@@ -445,13 +445,9 @@ int main (int argc, char *argv[])
 
 
 
-    uint32_t testSrcAs = 0;
-    uint32_t testDstAs = 0;
     Ipv4Address testDstAddress;
     Ipv4Address testSrcAddress;
     
-    bool testLinkFound = false;
-
   auto topology = ReadTopologyFromFile("as_topology.txt");
   std::map<uint32_t, Ptr<Node>> asNodes;
 
@@ -508,7 +504,7 @@ int main (int argc, char *argv[])
             createdLinks.insert({small_asn, large_asn});
 
             ipv4.SetBase(baseAddress, netMask);
-            // assignメソッドを使わず、自分で実装 (assignはIPの重複確認の処理が入っているが、時間がかかるので不採用)
+            // assignメソッドを使わず、自分で実装 (AssignはIPの重複確認の処理が入っているが、時間がかかるので不採用)
             // Ipv4InterfaceContainer interfaces = ipv4.Assign(devices);
 
             Ptr<Ipv4> ipv4Node1 = node1->GetObject<Ipv4>();
@@ -546,12 +542,16 @@ int main (int argc, char *argv[])
 
     }
 
+    std::cout << "finish creating links" << std::endl;
+
     for (const auto& [asn, node] : asNodes)
     {
         Ptr<Ipv4> ipv4Node = node->GetObject<Ipv4>();
         SetHostaddress(asn, ipv4Node, asPrefixes);
         
     }
+
+    std::cout << "finish setting hostaddress" << std::endl;
 
     routingTableGenerator(targetdir, asNodes, asinterfaces);
 
@@ -562,9 +562,9 @@ int main (int argc, char *argv[])
     // Ping test
     // ==========================
 
-    uint32_t pingSrcAs = 10010;  // Pingを実行するASは固定
+    uint32_t pingSrcAs = 1;  // Pingを実行するASは固定
 
-    Ipv4Address pingDst("1.6.136.1");
+    Ipv4Address pingDst("1.0.128.1");
 
     std::cout << "\n==============================" << std::endl;
     std::cout << "Ping test" << std::endl;
