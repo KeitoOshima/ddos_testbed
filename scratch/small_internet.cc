@@ -27,36 +27,36 @@ struct NeighborInfo {
     std::string relationship;
 };
 
-struct InterfacesInfo{
+struct InterfacesInfo {
     uint32_t interfaceId;
     Ipv4Address address;
     Ipv4Mask mask;
 };
 
-
-struct ASPrefixInfo
-{
+struct ASPrefixInfo {
     Ipv4Address network;
     Ipv4Mask mask;
 };
 
-// 初期設定のアドレスとマスク
-ns3::Ipv4Address baseAddress("10.0.0.0");
-ns3::Ipv4Mask netMask("255.255.255.252");
+struct PrefixAllocationState
+{
+    size_t prefixIndex = 0;
+    uint32_t offset = 4;
+};
 
 std::string targetdir = "./ASrouteInfo";
 
 
 std::map<uint32_t, std::vector<NeighborInfo>> ReadTopologyFromFile(const std::string& filename) {
-    std::map<uint32_t, std::vector<NeighborInfo>> topology;
-    std::ifstream topology_file(filename);
-    if (!topology_file.is_open()) {
+    std::map<uint32_t, std::vector<NeighborInfo>> as_relation;
+    std::ifstream relation_file(filename);
+    if (!relation_file.is_open()) {
         std::cerr << "Failed to open topology file: " << filename << std::endl;
-        return topology;
+        return as_relation;
     }
 
     std::string line;
-    while (std::getline(topology_file, line)) {
+    while (std::getline(relation_file, line)) {
         if (line.empty() || line[0] == '#') {
             continue; 
         }
@@ -85,10 +85,140 @@ std::map<uint32_t, std::vector<NeighborInfo>> ReadTopologyFromFile(const std::st
             uint32_t neighbor_asn = std::stoul(token.substr(2, opneParen_pos - 2));
 
             std::string relationship = token.substr(opneParen_pos + 1, closeParen_pos - opneParen_pos - 1);
-            topology[asn].push_back({neighbor_asn, relationship});
+            as_relation[asn].push_back({neighbor_asn, relationship});
         }
     }
-    return topology;
+    return as_relation;
+}
+
+
+std::map<uint32_t, std::vector<ASPrefixInfo>> ReadASPrefixes(const std::string& filename){
+    std::map<uint32_t, std::vector<ASPrefixInfo>> prefixes; 
+
+    std::ifstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr
+            << "Failed to open "
+            << filename
+            << std::endl;
+
+        return prefixes;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty()) {
+            continue;
+        }
+
+        size_t spacepos = line.find(' ');
+        size_t slashpos = line.find('/');
+
+        if (spacepos == std::string::npos || slashpos == std::string::npos) {
+            continue;
+        }
+
+        try{
+            uint32_t asn = std::stoul(line.substr(0, spacepos));
+
+            std::string ippart = line.substr(spacepos + 1, slashpos - spacepos - 1);
+            std::string prefix_length = line.substr(slashpos + 1);
+
+            Ipv4Address ip(ippart.c_str());
+
+            std::string maskpart = "/" + prefix_length;
+            Ipv4Mask mask(maskpart.c_str());
+
+            Ipv4Address network = ip.CombineMask(mask);
+
+
+            prefixes[asn].push_back({network, mask});
+        }
+        catch (const std::exception& e) {
+            std::cerr
+            << "Failed to parse announcement: "
+            << line
+            << std::endl;
+        }
+    }
+    return prefixes;
+}
+
+
+bool Allocate_Address_FromASprefix(uint32_t ownerAsn, const std::map<uint32_t, std::vector<ASPrefixInfo>>& asLinkPrefixes, std::map<uint32_t, PrefixAllocationState>& allocationStates, Ipv4Address& address1, Ipv4Address& address2) {
+   
+   // これより下をかきかえる
+   
+   
+    auto prefixIt = asLinkPrefixes.find(ownerAsn);
+
+    if (prefixIt == asLinkPrefixes.end())
+    {
+        std::cerr
+            << "No announced prefix for AS"
+            << ownerAsn
+            << std::endl;
+
+        return false;
+    }
+
+    const std::vector<ASPrefixInfo>& prefixes = prefixIt->second;
+
+    PrefixAllocationState& state = allocationStates[ownerAsn];
+
+    while (state.prefixIndex < prefixes.size()) {
+        const ASPrefixInfo& prefix = prefixes[state.prefixIndex];
+
+        uint32_t prefixLength = prefix.mask.GetPrefixLength();
+        if (prefixLength > 31) {
+            state.prefixIndex++;
+            state.offset = 4;
+            continue;
+        }
+
+        uint64_t addressCount = 1ULL << (32 - prefixLength);
+
+        // このprefix内にまだ2アドレス残っている
+        if (static_cast<uint64_t>(state.offset) + 1 < addressCount)
+        {
+            uint32_t base =
+                prefix.network.Get();
+
+            address1 =
+                Ipv4Address(base + state.offset);
+
+            address2 =
+                Ipv4Address(base + state.offset + 1);
+
+            state.offset += 2;
+
+            return true;
+        }
+
+        // std::cout
+        // << "Prefix exhausted: AS"
+        // << ownerAsn
+        // << " prefix="
+        // << prefix.network
+        // << "/"
+        // << prefixLength
+        // << ", move to next prefix"
+        // << std::endl;
+
+        state.prefixIndex++;
+        state.offset = 4;
+
+
+    }
+    std::cerr
+    << "All link prefixes exhausted for AS"
+    << ownerAsn
+    << std::endl;
+
+    return false;
+    
+
 }
 
 void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, Ptr<Node>>& asNodes, const std::map<uint32_t, std::map<uint32_t, InterfacesInfo>>& asinterfaces) {
@@ -150,112 +280,11 @@ void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, P
 
         }
 
-        if (asn == 23969)
-        {
-            Ipv4Mask linkMask("255.255.255.252");
-
-            Ipv4Address sourceAddress =
-                asinterfaces.at(1).at(9829).address;
-
-            Ipv4Address sourceNetwork =
-                sourceAddress.CombineMask(linkMask);
-
-            std::cout
-                << "Return route on AS1: "
-                << sourceNetwork
-                << "/30 via "
-                << asinterfaces.at(4651).at(23969).address
-                << std::endl;
-
-            node->AddNetworkRouteToFast(
-                sourceNetwork,
-                linkMask,
-                asinterfaces.at(4651).at(23969).address,
-                asinterfaces.at(23969).at(4651).interfaceId
-            );
-        }
-
-        if (asn == 4651)
-        {
-            Ipv4Mask linkMask("255.255.255.252");
-
-            Ipv4Address sourceAddress =
-                asinterfaces.at(1).at(9829).address;
-
-            Ipv4Address sourceNetwork =
-                sourceAddress.CombineMask(linkMask);
-
-            std::cout
-                << "Return route on AS1: "
-                << sourceNetwork
-                << "/30 via "
-                << asinterfaces.at(6453).at(4651).address
-                << std::endl;
-
-            node->AddNetworkRouteToFast(
-                sourceNetwork,
-                linkMask,
-                asinterfaces.at(6453).at(4651).address,
-                asinterfaces.at(4651).at(6453).interfaceId
-            );
-        }
-
-
-        if (asn == 6453)
-        {
-            Ipv4Mask linkMask("255.255.255.252");
-
-            Ipv4Address sourceAddress =
-                asinterfaces.at(1).at(9829).address;
-
-            Ipv4Address sourceNetwork =
-                sourceAddress.CombineMask(linkMask);
-
-            std::cout
-                << "Return route on AS1: "
-                << sourceNetwork
-                << "/30 via "
-                << asinterfaces.at(9829).at(6453).address
-                << std::endl;
-
-            node->AddNetworkRouteToFast(
-                sourceNetwork,
-                linkMask,
-                asinterfaces.at(9829).at(6453).address,
-                asinterfaces.at(6453).at(9829).interfaceId
-            );
-        }
-
-
-        if (asn == 9829)
-        {
-            Ipv4Mask linkMask("255.255.255.252");
-
-            Ipv4Address sourceAddress =
-                asinterfaces.at(1).at(9829).address;
-
-            Ipv4Address sourceNetwork =
-                sourceAddress.CombineMask(linkMask);
-
-            std::cout
-                << "Return route on AS1: "
-                << sourceNetwork
-                << "/30 via "
-                << asinterfaces.at(1).at(9829).address
-                << std::endl;
-
-            node->AddNetworkRouteToFast(
-                sourceNetwork,
-                linkMask,
-                asinterfaces.at(1).at(9829).address,
-                asinterfaces.at(9829).at(1).interfaceId
-            );
-        }
-
-
-
     }
 }
+
+
+
 
 
 void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node, 
@@ -432,10 +461,9 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
 
 int main (int argc, char *argv[])
 {
-  // uint32_t nNodes = 4996;
-  double simTime = 300.0;
+    double simTime = 300.0;
 
-  GlobalValue::Bind(
+    GlobalValue::Bind(
     "SimulatorImplementationType",
     StringValue("ns3::RealtimeSimulatorImpl"));
 
@@ -443,33 +471,44 @@ int main (int argc, char *argv[])
     "ChecksumEnabled",
     BooleanValue(true));
 
+    // Ipv4Address testDstAddress;
+    // Ipv4Address testSrcAddress;
 
-
-    Ipv4Address testDstAddress;
-    Ipv4Address testSrcAddress;
+    auto as_relation = ReadTopologyFromFile("as_topology.txt");
     
-  auto topology = ReadTopologyFromFile("as_topology.txt");
-  std::map<uint32_t, Ptr<Node>> asNodes;
-
-  for (const auto& [asn, neighbors] : topology) {
+    std::map<uint32_t, Ptr<Node>> asNodes;
+    for (const auto& [asn, neighbors] : as_relation) {
       Ptr<Node> node = CreateObject<Node>();
       asNodes[asn] = node;
-  }
+    }
 
-  InternetStackHelper internet;
-  for (const auto& [asn, node] : asNodes) {
-      internet.Install(node);
-  }
+    InternetStackHelper internet;
+    for (const auto& [asn, node] : asNodes) {
+        internet.Install(node);
+    }
 
-  PointToPointHelper p2p;
-  p2p.SetDeviceAttribute ("DataRate", StringValue ("10Mbps"));
-  p2p.SetChannelAttribute ("Delay", StringValue ("2ms"));
+    PointToPointHelper p2p;
+    p2p.SetDeviceAttribute ("DataRate", StringValue ("10Mbps"));
+    p2p.SetChannelAttribute ("Delay", StringValue ("2ms"));
 
-  std::set<std::pair<uint32_t, uint32_t>> createdLinks;
-  
-  std::map<uint32_t, std::map<uint32_t, InterfacesInfo>> asinterfaces;
-  ns3::Ipv4AddressHelper ipv4;
-  std::map<uint32_t, ASPrefixInfo> asPrefixes;
+    std::set<std::pair<uint32_t, uint32_t>> createdLinks;
+    std::map<uint32_t, std::map<uint32_t, InterfacesInfo>> asinterfaces;
+    std::map<uint32_t, ASPrefixInfo> asPrefixes;
+
+    ns3::Ipv4AddressHelper ipv4;
+    std::map<uint32_t, std::vector<ASPrefixInfo>> asLinkPrefixes = ReadASPrefixes("link_prefixes.txt");
+
+
+
+
+
+
+    
+
+
+
+std::map<uint32_t, PrefixAllocationState> allocationStates;
+  Ipv4Mask linkMask("255.255.255.254");
 
   std::set<uint32_t> tapnode {
     10010,
@@ -478,13 +517,11 @@ int main (int argc, char *argv[])
   };
 
 
-
-
-
-  for (const auto& [asn, neighbors] : topology) {
+  for (const auto& [asn, neighbors] : as_relation) {
 
       for (const auto& neighbor : neighbors) {
             uint32_t neighbor_asn = neighbor.asn;
+            std::string neighbor_relation = neighbor.relationship;
     
             uint32_t large_asn = std::max(asn, neighbor_asn);
             uint32_t small_asn = std::min(asn, neighbor_asn);
@@ -494,6 +531,56 @@ int main (int argc, char *argv[])
             if (createdLinks.find(link_pair) != createdLinks.end()) {
                 continue;
             }
+
+
+            uint32_t prefixOwnerAsn;
+
+            if (neighbor_relation == "provider") {
+                // neighbor側がProvider
+                prefixOwnerAsn =
+                    neighbor_asn;
+            }
+            else if (neighbor_relation == "customer") {
+                // asn側がProvider
+                prefixOwnerAsn =
+                    asn;
+            }
+            else if (neighbor_relation == "peer") {
+                // PeerならASNの小さい方
+                prefixOwnerAsn =
+                    std::min(asn, neighbor_asn);
+            }
+            else {
+                std::cerr
+                    << "Unknown relationship: "
+                    << neighbor_relation
+                    << std::endl;
+
+                continue;
+            }
+
+            Ipv4Address address1;
+            Ipv4Address address2;
+
+            if (!Allocate_Address_FromASprefix(prefixOwnerAsn, asLinkPrefixes, allocationStates, address1, address2))
+            {
+                if (prefixOwnerAsn == asn) {
+                    prefixOwnerAsn = neighbor_asn;
+                }else{
+                    prefixOwnerAsn = asn;
+                }
+
+                if (!Allocate_Address_FromASprefix(prefixOwnerAsn, asLinkPrefixes, allocationStates, address1, address2)) {
+                    std::cerr
+                    << "Failed to allocate IP: AS"
+                    << asn
+                    << " <-> AS"
+                    << neighbor_asn
+                    << std::endl;
+
+                    return 1;
+                }
+            }
             
             Ptr<Node> node1 = asNodes[asn];
             Ptr<Node> node2 = asNodes[neighbor_asn];
@@ -501,9 +588,8 @@ int main (int argc, char *argv[])
             NodeContainer link(node1, node2);
             NetDeviceContainer devices = p2p.Install(link);
 
-            createdLinks.insert({small_asn, large_asn});
+            createdLinks.insert(link_pair);
 
-            ipv4.SetBase(baseAddress, netMask);
             // assignメソッドを使わず、自分で実装 (AssignはIPの重複確認の処理が入っているが、時間がかかるので不採用)
             // Ipv4InterfaceContainer interfaces = ipv4.Assign(devices);
 
@@ -520,11 +606,8 @@ int main (int argc, char *argv[])
                 if2 = ipv4Node2->AddInterface(devices.Get(1));
             }
 
-            Ipv4Address address1(baseAddress.Get() + 1);
-            Ipv4Address address2(baseAddress.Get() + 2);
-
-            ipv4Node1->AddAddress(if1, Ipv4InterfaceAddress(address1, netMask));
-            ipv4Node2->AddAddress(if2, Ipv4InterfaceAddress(address2, netMask));
+            ipv4Node1->AddAddress(if1, Ipv4InterfaceAddress(address1, linkMask));
+            ipv4Node2->AddAddress(if2, Ipv4InterfaceAddress(address2, linkMask));
 
             ipv4Node1->SetMetric(if1, 1);
             ipv4Node2->SetMetric(if2, 1);
@@ -532,11 +615,8 @@ int main (int argc, char *argv[])
             ipv4Node1->SetUp(if1);
             ipv4Node2->SetUp(if2);
 
-            asinterfaces[asn][neighbor_asn] = {if1, address1, netMask};
-            asinterfaces[neighbor_asn][asn] = {if2, address2, netMask};
-
-            baseAddress = ns3::Ipv4Address(baseAddress.Get() + 4);
-
+            asinterfaces[asn][neighbor_asn] = {if1, address1, linkMask};
+            asinterfaces[neighbor_asn][asn] = {if2, address2, linkMask};
         }
 
 
@@ -558,28 +638,7 @@ int main (int argc, char *argv[])
     SetupTapConnections(tapnode, asNodes, asPrefixes);
 
 
-    // ==========================
-    // Ping test
-    // ==========================
-
-    uint32_t pingSrcAs = 1;  // Pingを実行するASは固定
-
-    Ipv4Address pingDst("1.0.128.1");
-
-    std::cout << "\n==============================" << std::endl;
-    std::cout << "Ping test" << std::endl;
-    std::cout << "Destination : " << pingDst << std::endl;
-    std::cout << "==============================" << std::endl;
-
-    PingHelper ping(pingDst);
-
-
-    ApplicationContainer pingApp =
-        ping.Install(asNodes.at(pingSrcAs));
-
-    pingApp.Start(Seconds(1.0));
-    pingApp.Stop(Seconds(9.0));
-
+    std::cout << "finsh setting routing tables" << std::endl;
     // pcap出力
     // p2p.EnablePcapAll("as-topology");
 
