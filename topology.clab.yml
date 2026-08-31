@@ -5,18 +5,12 @@ topology:
 
     as10010:
       kind: linux
-      image: alpine:latest
-      exec:
-        - apk add --no-cache iproute2 iputils tcpdump python3
+      image: ntp426-lab
 
     as4755:
       kind: linux
-      image: alpine:latest
-      exec:
-        - apk add --no-cache iproute2 iputils tcpdump python3
+      image: ntp426-lab
 
     as38091:
       kind: linux
-      image: alpine:latest
-      exec:
-        - apk add --no-cache iproute2 iputils tcpdump python3
+      image: ntp426-lab

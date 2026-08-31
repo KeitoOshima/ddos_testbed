@@ -148,11 +148,7 @@ std::map<uint32_t, std::vector<ASPrefixInfo>> ReadASPrefixes(const std::string& 
 
 bool Allocate_Address_FromASprefix(uint32_t ownerAsn, const std::map<uint32_t, std::vector<ASPrefixInfo>>& asLinkPrefixes, std::map<uint32_t, PrefixAllocationState>& allocationStates, Ipv4Address& address1, Ipv4Address& address2) {
    
-   // これより下をかきかえる
-   
-   
     auto prefixIt = asLinkPrefixes.find(ownerAsn);
-
     if (prefixIt == asLinkPrefixes.end())
     {
         std::cerr
@@ -243,7 +239,6 @@ void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, P
         std::string aspart = file.path().stem().string();
         uint32_t asn = std::stoul(aspart.substr(2));
 
-        // 1. ASノードの存在チェック
         auto nodeIt = asNodes.find(asn);
         if (nodeIt == asNodes.end()) {
             std::cerr << "Warning: AS " << asn << " found in route files but not in topology. Skipping." << std::endl;
@@ -285,21 +280,16 @@ void routingTableGenerator(const fs::path& targetdir, const std::map<uint32_t, P
 
 
 
-
-
-void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node, 
-std::map<uint32_t, ASPrefixInfo>& asPrefixes)
-{
+void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node, std::map<uint32_t, ASPrefixInfo>& asPrefixes) {
     std::string announcements_line;
-    std::ifstream address_file("announcements_origin.txt");
+    std::ifstream prefix_file("announcements_origin.txt");
 
-    if (!address_file.is_open()) {
+    if (!prefix_file.is_open()) {
         std::cerr << "Failed to open annoouncements_origin.txt" << std::endl;
         return;
     }
 
-    while (std::getline(address_file, announcements_line))
-    {
+    while (std::getline(prefix_file, announcements_line)) {
         if (announcements_line.empty() || announcements_line[0] == 'S') {
             continue;
         }
@@ -324,16 +314,14 @@ std::map<uint32_t, ASPrefixInfo>& asPrefixes)
         }
 
         // 数字以外が来たときの確認
-        try
-        {
+        try {
             uint32_t fileAsn = std::stoul(aspart);
 
             if (asn != fileAsn) {
                 continue;
             }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             std::cerr << "stoul failed: line=["
                       << announcements_line
                       << "] aspart=["
@@ -354,24 +342,16 @@ std::map<uint32_t, ASPrefixInfo>& asPrefixes)
             continue;
         }
 
-        std::string myip_part =
-            announcements_line.substr(
-                space_pos + 1,
-                slash_pos - space_pos - 1);
+        std::string myip_part = announcements_line.substr(space_pos + 1, slash_pos - space_pos - 1);
 
         Ipv4Address ipv4(myip_part.c_str());
         Ipv4Address hostipv4(ipv4.Get() + 1);
 
-        std::string mymask_part =
-            "/" + announcements_line.substr(slash_pos + 1);
+        std::string mymask_part = "/" + announcements_line.substr(slash_pos + 1);
 
         Ipv4Mask mask(mymask_part.c_str());
 
-        node->AddAddress(
-            0,
-            Ipv4InterfaceAddress(
-                hostipv4,
-                Ipv4Mask("255.255.255.255")));
+        node->AddAddress(0, Ipv4InterfaceAddress(hostipv4, Ipv4Mask("255.255.255.255")));
 
         asPrefixes[asn] = {
             ipv4,
@@ -388,44 +368,37 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
     csma.SetChannelAttribute("DataRate", StringValue("100Mbps"));
     csma.SetChannelAttribute("Delay", TimeValue(MilliSeconds(1)));
 
-
-
-
     for(uint32_t asn : tapnode) {
-      auto it = asNodes.find(asn);
-      if (it == asNodes.end()) {
+        auto it = asNodes.find(asn);
+        if (it == asNodes.end()) {
             std::cerr
             << "Tap target AS does not exist: AS"
             << asn
             << std::endl;
 
             continue;
-      }
+        }
+        
         ASPrefixInfo prefix = asPrefixes.at(asn);
-        Ipv4Address asAddress(prefix.network.Get() + 2);
+        Ipv4Address tapAddress(prefix.network.Get() + 2);
 
-      Ptr<Node> node = asNodes.at(asn);
+        Ptr<Node> node = asNodes.at(asn);
+        Ptr<Node> tapNode = CreateObject<Node>();
 
-      Ptr<Node> tapNode = CreateObject<Node>();
-      NodeContainer tapContainer;
-      tapContainer.Add(tapNode);
-      tapContainer.Add(node);
-      NetDeviceContainer tapdevice = csma.Install(tapContainer);
-      
+        NodeContainer tapContainer;
+        tapContainer.Add(tapNode);
+        tapContainer.Add(node);
+
+        NetDeviceContainer tapdevice = csma.Install(tapContainer);
+
         Ptr<Ipv4> asIpv4 = node->GetObject<Ipv4>();
 
         int32_t ifId = asIpv4->GetInterfaceForDevice(tapdevice.Get(1));
-
-        if (ifId == -1)
-        {
+        if (ifId == -1) {
             ifId = asIpv4->AddInterface(tapdevice.Get(1));
         }
 
-        asIpv4->AddAddress(
-            ifId,
-            Ipv4InterfaceAddress(
-                asAddress,
-                prefix.mask));
+        asIpv4->AddAddress(ifId, Ipv4InterfaceAddress(tapAddress, prefix.mask));
 
         asIpv4->SetMetric(ifId, 1);
         asIpv4->SetUp(ifId);
@@ -445,15 +418,15 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
             tapNode,
             tapdevice.Get(0));
 
-
         std::cout
         << "Tap connected: AS"
         << asn
         << " tap="
         << tapName
         << " AS-access-IP="
-        << asAddress
+        << tapAddress
         << std::endl;
+
     }
 
 }
@@ -461,7 +434,7 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
 
 int main (int argc, char *argv[])
 {
-    double simTime = 300.0;
+    double simTime = 900.0;
 
     GlobalValue::Bind(
     "SimulatorImplementationType",
@@ -494,27 +467,18 @@ int main (int argc, char *argv[])
     std::set<std::pair<uint32_t, uint32_t>> createdLinks;
     std::map<uint32_t, std::map<uint32_t, InterfacesInfo>> asinterfaces;
     std::map<uint32_t, ASPrefixInfo> asPrefixes;
+    std::map<uint32_t, PrefixAllocationState> allocationStates;
 
     ns3::Ipv4AddressHelper ipv4;
     std::map<uint32_t, std::vector<ASPrefixInfo>> asLinkPrefixes = ReadASPrefixes("link_prefixes.txt");
 
+    Ipv4Mask linkMask("255.255.255.254");
+    std::set<uint32_t> tapnode {
+        10010,
+        4755,
+        38091
+    };
 
-
-
-
-
-    
-
-
-
-std::map<uint32_t, PrefixAllocationState> allocationStates;
-  Ipv4Mask linkMask("255.255.255.254");
-
-  std::set<uint32_t> tapnode {
-    10010,
-    4755,
-    38091
-  };
 
 
   for (const auto& [asn, neighbors] : as_relation) {
@@ -637,8 +601,8 @@ std::map<uint32_t, PrefixAllocationState> allocationStates;
 
     SetupTapConnections(tapnode, asNodes, asPrefixes);
 
-
     std::cout << "finsh setting routing tables" << std::endl;
+
     // pcap出力
     // p2p.EnablePcapAll("as-topology");
 

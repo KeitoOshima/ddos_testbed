@@ -1,0 +1,37 @@
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       ca-certificates \
+       iproute2 \
+       iputils-ping \
+       tcpdump \
+       net-tools \
+       procps \
+       libcap2-bin \
+       python3 \
+       python3-pip \
+       nano \
+    && pip3 install scapy \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ntp-4.2.6.tar.gz /tmp/ntp-4.2.6.tar.gz
+
+RUN cd /tmp \
+    && tar xzf ntp-4.2.6.tar.gz \
+    && cd ntp-4.2.6 \
+    && ./configure --prefix=/usr/local/ntp426 \
+    && make -j"$(nproc)" \
+    && make install \
+    && rm -rf /tmp/ntp-4.2.6 /tmp/ntp-4.2.6.tar.gz
+
+RUN echo "ntp 123/udp" >> /etc/services
+
+COPY ntp.conf /etc/ntp.conf
+COPY start-ntp426.sh /usr/local/bin/start-ntp426.sh
+RUN chmod +x /usr/local/bin/start-ntp426.sh
+
+CMD ["sleep", "infinity"]
