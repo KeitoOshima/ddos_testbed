@@ -149,8 +149,7 @@ std::map<uint32_t, std::vector<ASPrefixInfo>> ReadASPrefixes(const std::string& 
 bool Allocate_Address_FromASprefix(uint32_t ownerAsn, const std::map<uint32_t, std::vector<ASPrefixInfo>>& asLinkPrefixes, std::map<uint32_t, PrefixAllocationState>& allocationStates, Ipv4Address& address1, Ipv4Address& address2) {
    
     auto prefixIt = asLinkPrefixes.find(ownerAsn);
-    if (prefixIt == asLinkPrefixes.end())
-    {
+    if (prefixIt == asLinkPrefixes.end()) {
         std::cerr
             << "No announced prefix for AS"
             << ownerAsn
@@ -178,14 +177,11 @@ bool Allocate_Address_FromASprefix(uint32_t ownerAsn, const std::map<uint32_t, s
         // このprefix内にまだ2アドレス残っている
         if (static_cast<uint64_t>(state.offset) + 1 < addressCount)
         {
-            uint32_t base =
-                prefix.network.Get();
+            uint32_t base = prefix.network.Get();
 
-            address1 =
-                Ipv4Address(base + state.offset);
+            address1 = Ipv4Address(base + state.offset);
 
-            address2 =
-                Ipv4Address(base + state.offset + 1);
+            address2 = Ipv4Address(base + state.offset + 1);
 
             state.offset += 2;
 
@@ -207,10 +203,10 @@ bool Allocate_Address_FromASprefix(uint32_t ownerAsn, const std::map<uint32_t, s
 
 
     }
-    std::cerr
-    << "All link prefixes exhausted for AS"
-    << ownerAsn
-    << std::endl;
+    // std::cerr
+    // << "All link prefixes exhausted for AS"
+    // << ownerAsn
+    // << std::endl;
 
     return false;
     
@@ -403,6 +399,13 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
         asIpv4->SetMetric(ifId, 1);
         asIpv4->SetUp(ifId);
 
+        // 確実にコンテナ側にIPを割り当てるために/32のネットワークアドレスをルーティングテーブルに割り当てる
+        Ipv4Address containerAddress(prefix.network.Get() + 3);
+        Ipv4StaticRoutingHelper staticRoutingHelper;
+        Ptr<Ipv4StaticRouting> staticRouting = staticRoutingHelper.GetStaticRouting(asIpv4);
+        staticRouting->AddHostRouteTo(containerAddress, ifId);
+
+
         std::string tapName = "tap-as" + std::to_string(asn);
         TapBridgeHelper tapBridge;
 
@@ -570,6 +573,18 @@ int main (int argc, char *argv[])
                 if2 = ipv4Node2->AddInterface(devices.Get(1));
             }
 
+
+            // std::cout
+            // << "LINK AS" << asn
+            // << " <-> AS" << neighbor_asn
+            // << " : "
+            // << address1
+            // << " <-> "
+            // << address2
+            // << " owner=AS"
+            // << prefixOwnerAsn
+            // << std::endl;
+
             ipv4Node1->AddAddress(if1, Ipv4InterfaceAddress(address1, linkMask));
             ipv4Node2->AddAddress(if2, Ipv4InterfaceAddress(address2, linkMask));
 
@@ -601,7 +616,7 @@ int main (int argc, char *argv[])
 
     SetupTapConnections(tapnode, asNodes, asPrefixes);
 
-    std::cout << "finsh setting routing tables" << std::endl;
+    std::cout << "finish setting routing tables" << std::endl;
 
     // pcap出力
     // p2p.EnablePcapAll("as-topology");
