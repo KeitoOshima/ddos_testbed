@@ -15,6 +15,8 @@ RUN apt-get update \
        python3 \
        python3-pip \
        nano \
+       traceroute \
+       iputils-ping \
     && pip3 install scapy \
     && rm -rf /var/lib/apt/lists/*
 
