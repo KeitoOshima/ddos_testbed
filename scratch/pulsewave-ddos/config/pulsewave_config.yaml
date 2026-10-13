@@ -1,0 +1,97 @@
+global_settings:
+  capture:
+    pcap_prefix: SAMPLE
+  attack:
+    burst_duration_s: 10.0
+    target_switch_duration_s: 2.0
+    attack_vectors:
+      - type: udp_flooding
+        packet_size: 256
+        data_rate: 1Mbps
+      - type: icmp_flooding
+        packet_size: 60
+        data_rate: 1Mbps
+      - type: tcp_syn_flooding
+        data_rate: 1Mbps
+  scheduling:
+    simulation_duration_s: 150.0
+
+# central_network:
+#   degree_of_redundancy: 0.5
+#   nodes:
+#     - id: IXP1
+#     - id: IXP2
+
+# autonomous_systems:
+#   - id: AS1
+#     network_address: 111.111.0.0
+#     attachment:
+#       central_network_attachment_node: IXP1
+#   - id: AS2
+#     network_address: 122.122.0.0
+#     attachment:
+#       central_network_attachment_node: IXP2
+#   - id: AS3
+#     network_address: 133.133.0.0
+#     attachment:
+#       central_network_attachment_node: IXP2
+
+attacker_nodes:
+  - network_address: 2.56.156.1
+    as_number: AS15401
+  - network_address: 122.144.64.1
+    as_number: AS18396
+  - network_address: 147.241.48.1
+    as_number: AS228
+  - network_address: 144.203.128.1
+    as_number: AS1311
+  - network_address: 212.110.128.1
+    as_number: AS5593
+
+# バックグラウンドトラフィックを引く際に、使うことになるかもしれないので一応残している
+
+# benign_client_nodes:
+#   - id: BN1
+#     peer: TN1
+#     owner_as: AS1
+#     max_reading_time: 150
+#   - id: BN2
+#     peer: TN2
+#     owner_as: AS1
+#     max_reading_time: 150
+#   - id: BN3
+#     peer: NTN3
+#     owner_as: AS1
+#     max_reading_time: 150
+#   - id: BN4
+#     peer: NTN1
+#     owner_as: AS2
+#     max_reading_time: 150
+#   - id: BN5
+#     peer: NTN2
+#     owner_as: AS2
+#     max_reading_time: 150
+#   - id: BN6
+#     peer: NTN4
+#     owner_as: AS2
+#     max_reading_time: 150
+#   - id: BN7
+#     peer: NTN1
+#     owner_as: AS3
+#     max_reading_time: 150
+#   - id: BN8
+#     peer: NTN2
+#     owner_as: AS3
+#     max_reading_time: 150
+#   - id: BN9
+#     peer: TN1
+#     owner_as: AS3
+#     max_reading_time: 150
+
+
+target_server_nodes:
+  - network_address: 43.229.64.3
+    as_number: AS6507
+  - network_address: 195.90.96.3
+    as_number: AS48185
+
