@@ -51,19 +51,16 @@ struct CarpetTargetScheduler
     std::mt19937 rng{20261104};
 
     // [攻撃者][宛先スロット]
-    std::vector<std::vector<Ptr<OnOffRetargetApplication>>>
-        applications;
+    std::vector<std::vector<Ptr<OnOffRetargetApplication>>> applications;
 
     std::ofstream log;
 };
 
 
 // 1024個の候補から256個を重複なしで選択
-static std::vector<Ipv4Address>
-DrawCarpetTargets(CarpetTargetScheduler& scheduler)
+static std::vector<Ipv4Address> DrawCarpetTargets(CarpetTargetScheduler& scheduler)
 {
-    std::vector<uint32_t> indices(
-        scheduler.candidateCount);
+    std::vector<uint32_t> indices(scheduler.candidateCount);
 
     std::iota(indices.begin(), indices.end(), 0);
 
@@ -75,14 +72,9 @@ DrawCarpetTargets(CarpetTargetScheduler& scheduler)
     std::vector<Ipv4Address> selected;
     selected.reserve(scheduler.activeCount);
 
-    for (uint32_t i = 0;
-         i < scheduler.activeCount;
-         ++i)
+    for (uint32_t i = 0; i < scheduler.activeCount; ++i)
     {
-        selected.emplace_back(
-            scheduler.network.Get()
-            + scheduler.offset
-            + indices[i]);
+        selected.emplace_back(scheduler.network.Get() + scheduler.offset + indices[i]);
     }
 
     return selected;
@@ -90,17 +82,11 @@ DrawCarpetTargets(CarpetTargetScheduler& scheduler)
 
 
 // 選択された宛先をCSVに記録
-static void
-RecordCarpetTargets(
-    CarpetTargetScheduler* scheduler,
-    const std::vector<Ipv4Address>& selected)
+static void RecordCarpetTargets(CarpetTargetScheduler* scheduler, const std::vector<Ipv4Address>& selected)
 {
-    const double now =
-        Simulator::Now().GetSeconds();
+    const double now = Simulator::Now().GetSeconds();
 
-    for (uint32_t i = 0;
-         i < selected.size();
-         ++i)
+    for (uint32_t i = 0; i < selected.size(); ++i)
     {
         scheduler->log
             << now << ","
@@ -121,41 +107,29 @@ RecordCarpetTargets(
 
 
 // 5秒ごとに宛先集合を更新
-static void
-SwitchCarpetTargets(CarpetTargetScheduler* scheduler)
+static void SwitchCarpetTargets(CarpetTargetScheduler* scheduler)
 {
     auto selected = DrawCarpetTargets(*scheduler);
 
     // すべての攻撃者で同じ256宛先を使用
-    for (const auto& attackerApps :
-         scheduler->applications)
+    for (const auto& attackerApps : scheduler->applications)
     {
-        NS_ABORT_MSG_IF(
-            attackerApps.size() != scheduler->activeCount,
-            "Unexpected number of carpet-bombing applications");
+        NS_ABORT_MSG_IF(attackerApps.size() != scheduler->activeCount, "Unexpected number of carpet-bombing applications");
 
-        for (uint32_t i = 0;
-             i < scheduler->activeCount;
-             ++i)
+        for (uint32_t i = 0; i < scheduler->activeCount; ++i)
         {
-            attackerApps[i]->SetRemote(
-                InetSocketAddress(selected[i], 0));
+            attackerApps[i]->SetRemote(InetSocketAddress(selected[i], 0));
         }
     }
 
     RecordCarpetTargets(scheduler, selected);
 
     // 次の切り替えを予約
-    const double next =
-        Simulator::Now().GetSeconds()
-        + scheduler->switchPeriod;
+    const double next = Simulator::Now().GetSeconds() + scheduler->switchPeriod;
 
     if (next < scheduler->stopTime)
     {
-        Simulator::Schedule(
-            Seconds(scheduler->switchPeriod),
-            &SwitchCarpetTargets,
-            scheduler);
+        Simulator::Schedule(Seconds(scheduler->switchPeriod), &SwitchCarpetTargets, scheduler);
     }
 }
 
@@ -186,9 +160,7 @@ struct PrefixAllocationState
 std::string targetdir = "./ASrouteInfo";
 
 
-std::vector<Ptr<Node>> ResolveNodes(
-    const std::vector<NodeConfig>& configs,
-    const std::map<uint32_t, Ptr<Node>>& asNodes)
+std::vector<Ptr<Node>> ResolveNodes(const std::vector<NodeConfig>& configs, const std::map<uint32_t, Ptr<Node>>& asNodes)
 {
     std::vector<Ptr<Node>> nodes;
 
@@ -572,17 +544,11 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
         std::string tapName = "tap-as" + std::to_string(asn);
         TapBridgeHelper tapBridge;
 
-        tapBridge.SetAttribute(
-            "Mode",
-            StringValue("UseBridge"));
+        tapBridge.SetAttribute("Mode", StringValue("UseBridge"));
 
-        tapBridge.SetAttribute(
-            "DeviceName",
-            StringValue(tapName));
+        tapBridge.SetAttribute("DeviceName", StringValue(tapName));
 
-        tapBridge.Install(
-            tapNode,
-            tapdevice.Get(0));
+        tapBridge.Install(tapNode, tapdevice.Get(0));
 
         std::cout
         << "Tap connected: AS"
@@ -598,10 +564,7 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
 }
 
 
-Ptr<Node> CreateVictimServer(
-    uint32_t victimAsn,
-    const std::map<uint32_t, Ptr<Node>>& asNodes,
-    const std::map<uint32_t, ASPrefixInfo>& asPrefixes)
+Ptr<Node> CreateVictimServer(uint32_t victimAsn, const std::map<uint32_t, Ptr<Node>>& asNodes, const std::map<uint32_t, ASPrefixInfo>& asPrefixes)
 {
     Ptr<Node> victim = asNodes.at(victimAsn);
     Ptr<Node> server = CreateObject<Node>();
@@ -655,7 +618,6 @@ Ptr<Node> CreateVictimServer(
         ->SetDefaultRoute(addresses[0], If[1]);
 
 
-
     // ===== Carpet-bombing用の追加処理 =====
 
     const uint32_t targetCount = 1024;
@@ -663,22 +625,15 @@ Ptr<Node> CreateVictimServer(
 
     Ptr<Ipv4> serverIpv4 = server->GetObject<Ipv4>();
 
-    Ptr<Ipv4StaticRouting> victimRouting =
-        helper.GetStaticRouting(victim->GetObject<Ipv4>());
+    Ptr<Ipv4StaticRouting> victimRouting = helper.GetStaticRouting(victim->GetObject<Ipv4>());
 
     for (uint32_t i = 0; i < targetCount; ++i)
     {
-        Ipv4Address targetIp(
-            prefix.network.Get() + targetOffset + i
-        );
+        Ipv4Address targetIp(prefix.network.Get() + targetOffset + i);
 
         // 1. Serverに宛先IPを追加
         serverIpv4->AddAddress(
-            If[1],
-            Ipv4InterfaceAddress(
-                targetIp,
-                Ipv4Mask("255.255.255.255")
-            )
+            If[1], Ipv4InterfaceAddress(targetIp, Ipv4Mask("255.255.255.255"))
         );
 
         // 2. Target ASルータにホスト経路を追加
@@ -700,38 +655,8 @@ Ptr<Node> CreateVictimServer(
 
 
 
-
-
-// debug
-
-// AS15401の送信キューで破棄されたパケット数
-static uint64_t queueDropCount = 0;
-
-void
-QueueDropCallback(Ptr<const Packet> packet)
-{
-    ++queueDropCount;
-
-    // 最初の10件だけ詳細表示
-    if (queueDropCount <= 10)
-    {
-        std::cout
-            << "[QUEUE DROP] "
-            << "Time=" << Simulator::Now().GetSeconds()
-            << "s PacketSize=" << packet->GetSize()
-            << " bytes"
-            << std::endl;
-    }
-}
-
-
-
-
-
 int main (int argc, char *argv[])
 {
-    // double simTime = 200.0;
-
     GlobalValue::Bind(
     "SimulatorImplementationType",
     StringValue("ns3::RealtimeSimulatorImpl"));
@@ -761,68 +686,15 @@ int main (int argc, char *argv[])
 
     ExperimentConfig experiment = ExperimentConfigReader::Load(configFile);
 
-    AttackScheduleHelper schedule(
-        experiment.attack,
-        static_cast<int>(experiment.targets.size())
-    );
-
-    std::cout << "Total cycle duration: "
-            << schedule.GetTotalCycleDuration()
-            << " s" << std::endl;
-
-    for (size_t i = 0; i < experiment.attack.attackVectors.size(); ++i)
-    {
-        auto [onTime, offTime] =
-            schedule.GetOnOffTime(static_cast<int>(i));
-
-        std::cout
-            << "Vector: " << experiment.attack.attackVectors[i].type
-            << ", Start: " << schedule.GetStartTime(static_cast<int>(i))
-            << ", ON: " << onTime
-            << ", OFF: " << offTime
-            << std::endl;
-    }
 
     std::cout << "Simulation duration: "
           << experiment.simulationDuration << std::endl;
 
-    std::cout << "Burst duration: "
-            << experiment.attack.burstDuration << std::endl;
-
     std::cout << "Number of attackers: "
             << experiment.attackers.size() << std::endl;
 
-    std::cout << "Number of targets: "
-            << experiment.targets.size() << std::endl;
-
-
     auto attackerNodes = ResolveNodes(experiment.attackers, asNodes);
     auto targetNodes = ResolveNodes(experiment.targets, asNodes);
-
-    
-    // 攻撃者ノードの確認
-    std::cout << "=== Attackers ===" << std::endl;
-
-    for (size_t i = 0; i < attackerNodes.size(); ++i)
-    {
-        std::cout
-            << experiment.attackers[i].networkAddress
-            << " (" << experiment.attackers[i].asNumber << ")"
-            << " -> Node ID: " << attackerNodes[i]->GetId()
-            << std::endl;
-    }
-
-    // 被害者ノードの確認
-    std::cout << "=== Targets ===" << std::endl;
-
-    for (size_t i = 0; i < targetNodes.size(); ++i)
-    {
-        std::cout
-            << experiment.targets[i].networkAddress
-            << " (" << experiment.targets[i].asNumber << ")"
-            << " -> Node ID: " << targetNodes[i]->GetId()
-            << std::endl;
-    }
 
 
     PointToPointHelper p2p;
@@ -850,8 +722,6 @@ int main (int argc, char *argv[])
         38091
     };
 
-
-
   for (const auto& [asn, neighbors] : as_relation) {
 
       for (const auto& neighbor : neighbors) {
@@ -866,7 +736,6 @@ int main (int argc, char *argv[])
             if (createdLinks.find(link_pair) != createdLinks.end()) {
                 continue;
             }
-
 
             uint32_t prefixOwnerAsn;
 
@@ -974,84 +843,37 @@ int main (int argc, char *argv[])
     {
         uint32_t victimAsn = std::stoul(target.asNumber.substr(2));
 
-        Ptr<Node> server =
-            CreateVictimServer(victimAsn, asNodes, asPrefixes);
+        Ptr<Node> server = CreateVictimServer(victimAsn, asNodes, asPrefixes);
 
         victimServers.push_back(server);
     }
 
-
     routingTableGenerator(targetdir, asNodes, asinterfaces);
-
-    // AS4755のルーティングテーブルを確認
-    {
-        Ipv4StaticRoutingHelper routeCheckHelper;
-
-        Ptr<Ipv4> as4755Ipv4 =
-            asNodes.at(4755)->GetObject<Ipv4>();
-
-        Ptr<Ipv4StaticRouting> as4755Routing =
-            routeCheckHelper.GetStaticRouting(as4755Ipv4);
-
-        Ipv4Address destination("1.178.112.100");
-
-        std::cout << "=== AS4755 routes ===" << std::endl;
-
-        for (uint32_t i = 0; i < as4755Routing->GetNRoutes(); ++i)
-        {
-            Ipv4RoutingTableEntry route =
-                as4755Routing->GetRoute(i);
-
-            Ipv4Mask routeMask = route.GetDestNetworkMask();
-
-            if (route.GetDestNetwork().CombineMask(routeMask) ==
-                destination.CombineMask(routeMask))
-            {
-                std::cout
-                    << "Destination: " << route.GetDestNetwork()
-                    << " Mask: " << routeMask
-                    << " Gateway: " << route.GetGateway()
-                    << " Interface: " << route.GetInterface()
-                    << std::endl;
-            }
-        }
-    }
-
-
-
-
-    Ipv4StaticRoutingHelper helper;
 
     SetupTapConnections(tapnode, asNodes, asPrefixes);
 
     std::cout << "finish setting routing tables" << std::endl;
 
 
-    const double burst = experiment.attack.burstDuration;
-    const double switchDuration = experiment.attack.targetSwitchDuration;
-    const double cycleDuration = schedule.GetTotalCycleDuration();
-
     // Carpet-bombing: 固定256宛先へのTCP SYN送信
-
-
     // ===== NetRadar-style Carpet-bombing =====
 
-    const uint32_t simultaneousTargets = 256;
-    const uint32_t candidateTargets = 1024;
-    const uint32_t targetOffset = 8;
+    const uint32_t simultaneousTargets = experiment.carpetBombing.simultaneousTargets;
+    const uint32_t candidateTargets = experiment.carpetBombing.candidateTargets;
+    const uint32_t targetOffset = experiment.carpetBombing.targetOffset;
 
-    Ipv4Address targetNetwork("1.178.112.0");
+    // YAMLのCIDR表記からネットワークアドレスを取得
+    std::string prefix = experiment.carpetBombing.targetPrefix;
+    std::string networkAddress = prefix.substr(0, prefix.find('/'));
+    Ipv4Address targetNetwork(networkAddress.c_str());
 
     // 各攻撃者ASの総送信レート
-    const uint64_t totalRateBps = 1000000;
+    const uint64_t totalRateBps = experiment.carpetBombing.totalRateBps;
 
-    // 256宛先に均等分配
-    const uint64_t ratePerTarget =
-        totalRateBps / simultaneousTargets;
-
-    const double attackStart = 1.0;
-    const double targetSwitchPeriod = 5.0;
-
+    // 各宛先に均等分配
+    const uint64_t ratePerTarget = totalRateBps / simultaneousTargets;
+    const double attackStart = experiment.carpetBombing.attackStart;
+    const double targetSwitchPeriod = experiment.carpetBombing.targetSwitchDuration;
 
     // ===== Scheduler初期化 =====
 
@@ -1062,111 +884,67 @@ int main (int argc, char *argv[])
     carpetScheduler.candidateCount = candidateTargets;
     carpetScheduler.activeCount = simultaneousTargets;
     carpetScheduler.switchPeriod = targetSwitchPeriod;
-    carpetScheduler.stopTime =
-        experiment.simulationDuration;
+    carpetScheduler.stopTime = experiment.simulationDuration;
 
-    carpetScheduler.log.open(
-        "carpet-target-selection.csv");
+    carpetScheduler.log.open("carpet-target-selection.csv");
 
-    NS_ABORT_MSG_IF(
-        !carpetScheduler.log.is_open(),
-        "Cannot open target selection log");
+    NS_ABORT_MSG_IF(!carpetScheduler.log.is_open(), "Cannot open target selection log");
 
-    carpetScheduler.log
-        << "time_s,slot,target_ip\n";
-
+    carpetScheduler.log << "time_s,slot,target_ip\n";
 
     // ===== 最初の256宛先を抽選 =====
 
-    auto initialTargets =
-        DrawCarpetTargets(carpetScheduler);
+    auto initialTargets = DrawCarpetTargets(carpetScheduler);
 
-    carpetScheduler.applications.reserve(
-        attackerNodes.size());
+    carpetScheduler.applications.reserve(attackerNodes.size());
 
 
     // ===== 攻撃アプリケーション生成 =====
 
     for (Ptr<Node> attacker : attackerNodes)
     {
-        std::vector<Ptr<OnOffRetargetApplication>>
-            attackerApps;
+        std::vector<Ptr<OnOffRetargetApplication>> attackerApps;
 
         attackerApps.reserve(simultaneousTargets);
 
-        for (uint32_t targetIndex = 0;
-             targetIndex < simultaneousTargets;
-             ++targetIndex)
+        for (uint32_t targetIndex = 0; targetIndex < simultaneousTargets; ++targetIndex)
         {
-            OnOffRetargetHelper attackHelper(
-                "ns3::Ipv4RawSocketFactory",
-                InetSocketAddress(
-                    initialTargets[targetIndex], 0));
+            OnOffRetargetHelper attackHelper("ns3::Ipv4RawSocketFactory", InetSocketAddress(initialTargets[targetIndex], 0));
 
-            attackHelper.SetAttribute(
-                "RawProtocol",
-                IntegerValue(6));
+            attackHelper.SetAttribute("RawProtocol", IntegerValue(6));
 
-            attackHelper.SetAttribute(
-                "AttackVector",
-                IntegerValue(
-                    AttackVector::tcp_syn_flooding));
+            attackHelper.SetAttribute("AttackVector", IntegerValue(AttackVector::tcp_syn_flooding));
 
-            attackHelper.SetAttribute(
-                "SkipFirstOffTime",
-                BooleanValue(true));
+            attackHelper.SetAttribute("SkipFirstOffTime", BooleanValue(true));
 
-            attackHelper.SetAttribute(
-                "SkipFirstScheduleAfterRemoteChange",
-                BooleanValue(true));
+            attackHelper.SetAttribute("SkipFirstScheduleAfterRemoteChange", BooleanValue(true));
 
-            attackHelper.SetAttribute(
-                "OnTime",
-                StringValue(
-                    "ns3::ConstantRandomVariable[Constant=200.0]"));
+            attackHelper.SetAttribute("OnTime",StringValue("ns3::ConstantRandomVariable[Constant=200.0]"));
 
-            attackHelper.SetAttribute(
-                "OffTime",
-                StringValue(
-                    "ns3::ConstantRandomVariable[Constant=0]"));
+            attackHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
 
-            attackHelper.SetAttribute(
-                "DataRate",
-                DataRateValue(
-                    DataRate(ratePerTarget)));
+            attackHelper.SetAttribute("DataRate", DataRateValue(DataRate(ratePerTarget)));
 
-            attackHelper.SetAttribute(
-                "PacketSize",
-                UintegerValue(42));
-
+            attackHelper.SetAttribute("PacketSize", UintegerValue(42));
 
             // アプリケーションをインストール
-            ApplicationContainer apps =
-                attackHelper.Install(attacker);
+            ApplicationContainer apps = attackHelper.Install(attacker);
 
-            NS_ABORT_MSG_IF(
-                apps.GetN() != 1,
-                "Expected exactly one application");
+            NS_ABORT_MSG_IF(apps.GetN() != 1, "Expected exactly one application");
 
-            Ptr<OnOffRetargetApplication> app =
-                DynamicCast<OnOffRetargetApplication>(
-                    apps.Get(0));
+            Ptr<OnOffRetargetApplication> app = DynamicCast<OnOffRetargetApplication>(apps.Get(0));
 
-            NS_ABORT_MSG_IF(
-                !app,
-                "OnOffRetargetApplication cast failed");
+            NS_ABORT_MSG_IF(!app, "OnOffRetargetApplication cast failed");
 
             // 後からSetRemote()を呼ぶため保持
             attackerApps.push_back(app);
 
             apps.Start(Seconds(attackStart));
 
-            apps.Stop(
-                Seconds(experiment.simulationDuration));
+            apps.Stop(Seconds(experiment.simulationDuration));
         }
 
-        carpetScheduler.applications.push_back(
-            std::move(attackerApps));
+        carpetScheduler.applications.push_back(std::move(attackerApps));
     }
 
 
@@ -1181,8 +959,7 @@ int main (int argc, char *argv[])
 
     // ===== 5秒後から宛先切り替え =====
 
-    if (attackStart + targetSwitchPeriod
-        < experiment.simulationDuration)
+    if (attackStart + targetSwitchPeriod < experiment.simulationDuration)
     {
         Simulator::Schedule(
             Seconds(attackStart + targetSwitchPeriod),
@@ -1198,6 +975,7 @@ int main (int argc, char *argv[])
     // pcap設定
     // pcapを取得する場所（AS番号, Device ID）
     std::vector<std::pair<uint32_t, uint32_t>> capturePoints = {
+        {174, asinterfaces.at(174).at(1311).interfaceId}
         /* carpet-bombing用に新たに設定しなおす必要がある
         {6507, asinterfaces.at(6507).at(9304).interfaceId},
         {6507, asinterfaces.at(6507).at(7473).interfaceId},
@@ -1237,37 +1015,6 @@ int main (int argc, char *argv[])
         std::cout << "PCAP: AS" << asn
                 << ", Device " << deviceIndex << std::endl;
     }
-
-
-        // ===== AS15401 Device 12 のDrop監視 =====
-    {
-        Ptr<Node> attacker = asNodes.at(15401);
-
-        Ptr<PointToPointNetDevice> dev =
-            DynamicCast<PointToPointNetDevice>(
-                attacker->GetDevice(12));
-
-        NS_ABORT_MSG_IF(
-            !dev,
-            "AS15401 Device 12 is not PointToPointNetDevice");
-
-        Ptr<Queue<Packet>> queue = dev->GetQueue();
-
-        NS_ABORT_MSG_IF(
-            !queue,
-            "AS15401 Device 12 has no queue");
-
-        std::cout
-            << "[DROP MONITOR] Node=" << attacker->GetId()
-            << " Device=12"
-            << " MaxSize=" << queue->GetMaxSize()
-            << std::endl;
-
-        queue->TraceConnectWithoutContext(
-            "Drop",
-            MakeCallback(&QueueDropCallback));
-    }
-
 
 
     for (size_t i = 0; i < victimServers.size(); ++i)

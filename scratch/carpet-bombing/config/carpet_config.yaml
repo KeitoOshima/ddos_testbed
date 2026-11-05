@@ -1,4 +1,3 @@
-# 一部pulse-wave-ddosで使用した変数をそのまま残してある(消すとコンパイルが通らないので)
 global_settings:
   capture:
     pcap_prefix: CARPET
@@ -13,10 +12,14 @@ global_settings:
 
     carpet_bombing:
       target_prefix: 1.178.112.0/20
+      candidate_targets: 1024
       simultaneous_targets: 256
       target_switch_duration_s: 5.0
+      target_offset: 8
+      total_rate_bps: 1000000
       target_selection: random
       traffic_distribution: uniform
+      attack_start_s: 1.0
 
   scheduling:
     simulation_duration_s: 20.0

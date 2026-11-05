@@ -25,6 +25,23 @@ struct NodeConfig
     std::string asNumber;
 };
 
+struct CarpetBombingConfig
+{
+    std::string targetPrefix;
+
+    uint32_t candidateTargets;
+    uint32_t simultaneousTargets;
+    uint32_t targetOffset;
+
+    uint64_t totalRateBps;
+
+    double attackStart;
+    double targetSwitchDuration;
+
+    std::string targetSelection;
+    std::string trafficDistribution;
+};
+
 struct ExperimentConfig
 {
     std::string pcapPrefix;
@@ -34,6 +51,10 @@ struct ExperimentConfig
 
     std::vector<NodeConfig> attackers;
     std::vector<NodeConfig> targets;
+
+    CarpetBombingConfig carpetBombing;
 };
+
+
 
 #endif
