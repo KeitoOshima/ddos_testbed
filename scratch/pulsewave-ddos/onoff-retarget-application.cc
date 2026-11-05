@@ -445,7 +445,7 @@ OnOffRetargetApplication::SendPacket()
          * Ipv4RawSocketImplementation
          *
          * NOTE! this implementation of syn flooding is taken from:
-         * https://github.com/calvin-f/EDDD/tree/main by Calvin Falter, a similar project that was
+         * https://github.com/calvin-f/EDDD/tree/main, by Calvin Falter, a similar project that was
          * running in parallel at our department.
          *
          * It is modified to allow for the explicit definition of specific ports or have them
@@ -469,7 +469,7 @@ OnOffRetargetApplication::SendPacket()
          * Ipv4RawSocketImplementation
          *
          * NOTE! this implementation of icmp flooding is taken from:
-         * https://github.com/calvin-f/EDDD/tree/main by Calvin Falter, a similar project that was
+         * https://github.com/calvin-f/EDDD/tree/main, by Calvin Falter, a similar project that was
          * running in parallel at our department.
          *
          * I only modified it as far as that I adapted it to the control flow of this particular
@@ -532,7 +532,7 @@ OnOffRetargetApplication::GetRandomSendDelayModifier() const
 int
 OnOffRetargetApplication::GetRandomPort(bool isDestPort)
 {
-    // courtesy of https://github.com/calvin-f/EDDD/tree/main by Calvin Falter, as part of his
+    // courtesy of https://github.com/calvin-f/EDDD/tree/, by Calvin Falter, as part of his
     // syn flooding implementation which is adopted here. slightly modified to account for explicitly
     // configured port numbers
 

@@ -1,0 +1,38 @@
+# 一部pulse-wave-ddosで使用した変数をそのまま残してある(消すとコンパイルが通らないので)
+global_settings:
+  capture:
+    pcap_prefix: CARPET
+
+  attack:
+    burst_duration_s: 10.0
+    target_switch_duration_s: 5.0
+
+    attack_vectors:
+      - type: tcp_syn_flooding
+        data_rate: 1Mbps
+
+    carpet_bombing:
+      target_prefix: 1.178.112.0/20
+      simultaneous_targets: 256
+      target_switch_duration_s: 5.0
+      target_selection: random
+      traffic_distribution: uniform
+
+  scheduling:
+    simulation_duration_s: 20.0
+
+attacker_nodes:
+  - network_address: 2.56.156.1
+    as_number: AS15401
+  - network_address: 122.144.64.1
+    as_number: AS18396
+  - network_address: 147.241.48.1
+    as_number: AS228
+  - network_address: 144.203.128.1
+    as_number: AS1311
+  - network_address: 212.110.128.1
+    as_number: AS5593
+
+target_server_nodes:
+  - network_address: 1.178.112.3
+    as_number: AS12975

@@ -2,7 +2,6 @@
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
-#include "ns3/point-to-point-net-device.h"
 #include "ns3/applications-module.h"
 #include <sstream>
 #include "ns3/internet-apps-module.h"
@@ -16,20 +15,8 @@
 #include <vector>
 #include <set>
 #include <filesystem>
-#include "experiment-config-reader.h"
-#include "attack-schedule-helper.h"
 
-#include "onoff-retarget-helper.h"
-#include "onoff-retarget-application.h"
-#include "ns3/inet-socket-address.h"
-#include "ns3/ipv4-raw-socket-factory.h"
 
-#include "ns3/boolean.h"
-#include "ns3/data-rate.h"
-#include "ns3/string.h"
-
-#include <stdexcept>
-#include <algorithm>
 
 using namespace ns3;
 namespace fs = std::filesystem;
@@ -54,26 +41,11 @@ struct ASPrefixInfo {
 struct PrefixAllocationState
 {
     size_t prefixIndex = 0;
-    uint32_t offset = 8;
+    uint32_t offset = 4;
 };
 
 std::string targetdir = "./ASrouteInfo";
 
-
-std::vector<Ptr<Node>> ResolveNodes(
-    const std::vector<NodeConfig>& configs,
-    const std::map<uint32_t, Ptr<Node>>& asNodes)
-{
-    std::vector<Ptr<Node>> nodes;
-
-    for (const auto& config : configs)
-    {
-        uint32_t asn = std::stoul(config.asNumber.substr(2));
-        nodes.push_back(asNodes.at(asn));
-    }
-
-    return nodes;
-}
 
 std::map<uint32_t, std::vector<NeighborInfo>> ReadTopologyFromFile(const std::string& filename) {
     std::map<uint32_t, std::vector<NeighborInfo>> as_relation;
@@ -196,7 +168,7 @@ bool Allocate_Address_FromASprefix(uint32_t ownerAsn, const std::map<uint32_t, s
         uint32_t prefixLength = prefix.mask.GetPrefixLength();
         if (prefixLength > 31) {
             state.prefixIndex++;
-            state.offset = 8;
+            state.offset = 4;
             continue;
         }
 
@@ -227,7 +199,7 @@ bool Allocate_Address_FromASprefix(uint32_t ownerAsn, const std::map<uint32_t, s
         // << std::endl;
 
         state.prefixIndex++;
-        state.offset = 8;
+        state.offset = 4;
 
 
     }
@@ -386,9 +358,6 @@ void SetHostaddress(const uint32_t& asn, Ptr<Ipv4>& node, std::map<uint32_t, ASP
 }
 
 
-
-
-
 void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint32_t, Ptr<Node>>& asNodes, std::map<uint32_t, ASPrefixInfo>& asPrefixes) {
     
     CsmaHelper csma;
@@ -466,106 +435,9 @@ void SetupTapConnections (const std::set<uint32_t>& tapnode, const std::map<uint
 }
 
 
-Ptr<Node> CreateVictimServer(
-    uint32_t victimAsn,
-    const std::map<uint32_t, Ptr<Node>>& asNodes,
-    const std::map<uint32_t, ASPrefixInfo>& asPrefixes)
-{
-    Ptr<Node> victim = asNodes.at(victimAsn);
-    Ptr<Node> server = CreateObject<Node>();
-
-    InternetStackHelper().Install(server);
-
-    PointToPointHelper p2p;
-    p2p.SetDeviceAttribute("DataRate", StringValue("100Mbps"));
-    p2p.SetChannelAttribute("Delay", StringValue("1ms"));
-
-    NetDeviceContainer devices =
-        p2p.Install(victim, server);
-
-
-
-    p2p.EnablePcap(
-    "victim-server-link-AS" + std::to_string(victimAsn),
-    devices.Get(0));
-
-
-
-
-    ASPrefixInfo prefix = asPrefixes.at(victimAsn);
-    Ipv4Mask mask("255.255.255.248");
-
-    Ipv4Address addresses[2] = {
-        Ipv4Address(prefix.network.Get() + 2),
-        Ipv4Address(prefix.network.Get() + 3)
-    };
-
-    Ptr<Node> nodes[2] = {victim, server};
-    uint32_t serverIf[2];  // Server側のインタフェース番号
-
-    for (int i = 0; i < 2; i++)
-    {
-        Ptr<Ipv4> ipv4 = nodes[i]->GetObject<Ipv4>();
-        uint32_t interface = ipv4->AddInterface(devices.Get(i));
-
-        ipv4->AddAddress(
-            interface,
-            Ipv4InterfaceAddress(addresses[i], mask));
-
-        ipv4->SetUp(interface);
-        serverIf[i] = interface;
-    }
-
-
-    // log
-    std::cout << "Victim AS" << victimAsn
-            << " gateway=" << addresses[0]
-            << " server=" << addresses[1]
-            << std::endl;
-
-
-
-    Ptr<Ipv4> victimIpv4 = victim->GetObject<Ipv4>();
-
-    Ipv4Address serverAddress(addresses[1]);
-
-    std::cout << "Server IP: " << serverAddress << std::endl;
-
-    std::cout << "IsDestinationAddress: "
-            << victimIpv4->IsDestinationAddress(
-                    serverAddress,
-                    serverIf[0])
-            << std::endl;
-
-
-    for (uint32_t i = 0; i < victimIpv4->GetNInterfaces(); ++i)
-    {
-        for (uint32_t j = 0; j < victimIpv4->GetNAddresses(i); ++j)
-        {
-            auto addr = victimIpv4->GetAddress(i, j);
-
-            if (addr.GetLocal() == addresses[1])
-            {
-                std::cout << "DUPLICATE IP interface=" << i
-                        << " address=" << addr.GetLocal()
-                        << std::endl;
-            }
-        }
-    }
-
-    // Serverから外部へ返信するための経路
-    Ipv4StaticRoutingHelper helper;
-    helper.GetStaticRouting(server->GetObject<Ipv4>())
-        ->SetDefaultRoute(addresses[0], serverIf[1]);
-
-    return server;
-}
-
-
-
 int main (int argc, char *argv[])
 {
-    // double simTime = 200.0;
+    double simTime = 900.0;
 
     GlobalValue::Bind(
     "SimulatorImplementationType",
@@ -593,80 +465,20 @@ int main (int argc, char *argv[])
 
     CommandLine cmd;
 
-    std::string configFile = "/home/k-oshima/internet_testbed/ns-3.46/scratch/pulsewave-ddos/config/pulsewave_config.yaml";
+    std::string configFile = "pulsewave_config.yaml";
     cmd.AddValue("configFile", "Path to the configuration file", configFile);
     cmd.Parse(argc, argv);
 
-
-
-    ExperimentConfig experiment = ExperimentConfigReader::Load(configFile);
-
-    AttackScheduleHelper schedule(
-        experiment.attack,
-        static_cast<int>(experiment.targets.size())
-    );
-
-    std::cout << "Total cycle duration: "
-            << schedule.GetTotalCycleDuration()
-            << " s" << std::endl;
-
-    for (size_t i = 0; i < experiment.attack.attackVectors.size(); ++i)
-    {
-        auto [onTime, offTime] =
-            schedule.GetOnOffTime(static_cast<int>(i));
-
-        std::cout
-            << "Vector: " << experiment.attack.attackVectors[i].type
-            << ", Start: " << schedule.GetStartTime(static_cast<int>(i))
-            << ", ON: " << onTime
-            << ", OFF: " << offTime
-            << std::endl;
+    NodeLookupMapper nodeLookupMapper;
+    ConfigFileReader configReader(configFile, &nodeLookupMapper);
+    if (printConfiguration) {
+        configReader.PrintConfiguration();
     }
-
-    std::cout << "Simulation duration: "
-          << experiment.simulationDuration << std::endl;
-
-    std::cout << "Burst duration: "
-            << experiment.attack.burstDuration << std::endl;
-
-    std::cout << "Number of attackers: "
-            << experiment.attackers.size() << std::endl;
-
-    std::cout << "Number of targets: "
-            << experiment.targets.size() << std::endl;
-
-
-    auto attackerNodes = ResolveNodes(experiment.attackers, asNodes);
-    auto targetNodes = ResolveNodes(experiment.targets, asNodes);
-
-    
-    // 攻撃者ノードの確認
-    std::cout << "=== Attackers ===" << std::endl;
-
-    for (size_t i = 0; i < attackerNodes.size(); ++i)
-    {
-        std::cout
-            << experiment.attackers[i].networkAddress
-            << " (" << experiment.attackers[i].asNumber << ")"
-            << " -> Node ID: " << attackerNodes[i]->GetId()
-            << std::endl;
-    }
-
-    // 被害者ノードの確認
-    std::cout << "=== Targets ===" << std::endl;
-
-    for (size_t i = 0; i < targetNodes.size(); ++i)
-    {
-        std::cout
-            << experiment.targets[i].networkAddress
-            << " (" << experiment.targets[i].asNumber << ")"
-            << " -> Node ID: " << targetNodes[i]->GetId()
-            << std::endl;
-    }
+    NS_LOG_INFO("DPWS: configuration parsing done");
 
 
     PointToPointHelper p2p;
-    p2p.SetDeviceAttribute ("DataRate", StringValue ("100Mbps"));
+    p2p.SetDeviceAttribute ("DataRate", StringValue ("10Mbps"));
     p2p.SetChannelAttribute ("Delay", StringValue ("2ms"));
 
     std::set<std::pair<uint32_t, uint32_t>> createdLinks;
@@ -811,207 +623,19 @@ int main (int argc, char *argv[])
         SetHostaddress(asn, ipv4Node, asPrefixes);
         
     }
+
     std::cout << "finish setting hostaddress" << std::endl;
 
-    std::vector<Ptr<Node>> victimServers;
-
-    for (const auto& target : experiment.targets)
-    {
-        uint32_t victimAsn = std::stoul(target.asNumber.substr(2));
-
-        Ptr<Node> server =
-            CreateVictimServer(victimAsn, asNodes, asPrefixes);
-
-        victimServers.push_back(server);
-    }
-
-
     routingTableGenerator(targetdir, asNodes, asinterfaces);
-
-    Ipv4StaticRoutingHelper helper;
 
     SetupTapConnections(tapnode, asNodes, asPrefixes);
 
     std::cout << "finish setting routing tables" << std::endl;
 
-
-    const double burst = experiment.attack.burstDuration;
-    const double switchDuration = experiment.attack.targetSwitchDuration;
-    const double cycleDuration = schedule.GetTotalCycleDuration();
-
-    for (Ptr<Node> attacker : attackerNodes)
-    {
-        for (size_t vectorIndex = 0;
-            vectorIndex < experiment.attack.attackVectors.size();
-            ++vectorIndex)
-        {
-            const auto& vector = experiment.attack.attackVectors[vectorIndex];
-
-            int protocol;
-            AttackVector attackVector;
-
-            if (vector.type == "udp_flooding")
-            {
-                protocol = 17;
-                attackVector = AttackVector::udp_flooding;
-            }
-            else if (vector.type == "icmp_flooding")
-            {
-                protocol = 1;
-                attackVector = AttackVector::icmp_flooding;
-            }
-            else if (vector.type == "tcp_syn_flooding")
-            {
-                protocol = 6;
-                attackVector = AttackVector::tcp_syn_flooding;
-            }
-            else
-            {
-                throw std::runtime_error("Unknown attack vector: " + vector.type);
-            }
-
-            for (size_t targetIndex = 0;
-                targetIndex < experiment.targets.size();
-                ++targetIndex)
-            {
-                Ipv4Address targetIp(
-                    experiment.targets[targetIndex].networkAddress.c_str());
-
-                for (double cycleStart = 0.0;
-                    cycleStart < experiment.simulationDuration;
-                    cycleStart += cycleDuration)
-                {
-                    double startTime =
-                        cycleStart +
-                        schedule.GetStartTime(vectorIndex) +
-                        targetIndex * (burst + switchDuration);
-
-                    double stopTime = startTime + burst;
-
-                    if (startTime >= experiment.simulationDuration)
-                    {
-                        break;
-                    }
-
-                    OnOffRetargetHelper attackHelper(
-                        "ns3::Ipv4RawSocketFactory",
-                        InetSocketAddress(targetIp, 0));
-
-                    attackHelper.SetAttribute(
-                        "RawProtocol", IntegerValue(protocol));
-
-                    attackHelper.SetAttribute(
-                        "AttackVector", IntegerValue(attackVector));
-
-                    attackHelper.SetAttribute(
-                        "SkipFirstOffTime", BooleanValue(true));
-
-                    // アプリケーション実行中は送信を継続
-                    attackHelper.SetAttribute(
-                        "OnTime",
-                        StringValue(
-                            "ns3::ConstantRandomVariable[Constant=" +
-                            std::to_string(burst + 1.0) + "]"));
-
-                    attackHelper.SetAttribute(
-                        "OffTime",
-                        StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-
-                    uint32_t packetSize =
-                        vector.type == "tcp_syn_flooding" ? 42 : vector.packetSize;
-
-                    attackHelper.SetAttribute(
-                        "DataRate",
-                        DataRateValue(DataRate(vector.dataRate)));
-
-                    attackHelper.SetAttribute(
-                        "PacketSize",
-                        UintegerValue(packetSize));
-
-                    ApplicationContainer apps = attackHelper.Install(attacker);
-
-                    apps.Start(Seconds(startTime));
-                    apps.Stop(Seconds(std::min(
-                        stopTime,
-                        experiment.simulationDuration)));
-                }
-            }
-        }
-    }
-
-    // pcapを取得する場所（AS番号, Device ID）
-    std::vector<std::pair<uint32_t, uint32_t>> capturePoints = {
-        {6507, asinterfaces.at(6507).at(9304).interfaceId},
-        {6507, asinterfaces.at(6507).at(7473).interfaceId},
-        {6507, asinterfaces.at(6507).at(2914).interfaceId},
-        {6507, asinterfaces.at(6507).at(1299).interfaceId},
-        {6507, asinterfaces.at(6507).at(45899).interfaceId},
-        {48185, asinterfaces.at(48185).at(3356).interfaceId},
-        {48185, asinterfaces.at(48185).at(9299).interfaceId},
-        {48185, asinterfaces.at(48185).at(2914).interfaceId},
-        {48185, asinterfaces.at(48185).at(1299).interfaceId},
-        {48185, asinterfaces.at(48185).at(31133).interfaceId},
-        {9304, asinterfaces.at(9304).at(15401).interfaceId},
-        {2914, asinterfaces.at(2914).at(668).interfaceId},
-        {668, asinterfaces.at(668).at(228).interfaceId},        
-        
-    };
-
-    // 指定箇所でpcap取得
-    for (const auto& [asn, deviceIndex] : capturePoints)
-    {
-        Ptr<Node> node = asNodes.at(asn);
-
-        NS_ABORT_MSG_IF(
-            deviceIndex >= node->GetNDevices(),
-            "Invalid device index: AS" << asn << ", Device " << deviceIndex);
-
-        Ptr<PointToPointNetDevice> dev =
-            DynamicCast<PointToPointNetDevice>(
-                node->GetDevice(deviceIndex));
-
-        NS_ABORT_MSG_IF(
-            !dev,
-            "Not a PointToPoint device: AS" << asn << ", Device " << deviceIndex);
-
-        p2p.EnablePcap("target-AS" + std::to_string(asn), dev);
-
-        std::cout << "PCAP: AS" << asn
-                << ", Device " << deviceIndex << std::endl;
-    }
-
-    for (size_t i = 0; i < victimServers.size(); ++i)
-    {
-        Ptr<Node> server = victimServers[i];
-
-        std::cout << "Server AS"
-                << experiment.targets[i].asNumber
-                << " Node ID: " << server->GetId()
-                << std::endl;
-
-        for (uint32_t j = 0; j < server->GetNDevices(); ++j)
-        {
-            Ptr<NetDevice> dev = server->GetDevice(j);
-
-            std::cout << "  Device " << j
-                    << ": " << dev->GetInstanceTypeId().GetName()
-                    << std::endl;
-
-            if (DynamicCast<PointToPointNetDevice>(dev))
-            {
-                p2p.EnablePcap(
-                    "server-" + experiment.targets[i].asNumber,
-                    dev);
-            }
-        }
-    }    
-
     // pcap出力
     // p2p.EnablePcapAll("as-topology");
 
-    Simulator::Stop(Seconds(experiment.simulationDuration));
-
-    std::cout << "Starting simulation..." << std::endl;
+    Simulator::Stop(Seconds(simTime));
     Simulator::Run();
     Simulator::Destroy();
 
