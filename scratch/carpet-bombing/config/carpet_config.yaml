@@ -22,19 +22,22 @@ global_settings:
       attack_start_s: 1.0
 
   scheduling:
-    simulation_duration_s: 20.0
+    simulation_duration_s: 10.0
 
+# 11/16追記 
+# コメントマークがついているASは被害ASまでの経路に背景トラフィックが存在しない経路があったので、
+# 実際のトラフィック取得ではコメントに書かれたASに書き換える
 attacker_nodes:
   - network_address: 2.56.156.1
     as_number: AS15401
   - network_address: 122.144.64.1
-    as_number: AS18396
+    as_number: AS18396 # AS8220
   - network_address: 147.241.48.1
-    as_number: AS228
+    as_number: AS228 # AS293
   - network_address: 144.203.128.1
-    as_number: AS1311
+    as_number: AS1311 
   - network_address: 212.110.128.1
-    as_number: AS5593
+    as_number: AS5593 # 12507
 
 target_server_nodes:
   - network_address: 1.178.112.3

@@ -27,6 +27,7 @@
 #include "ns3/boolean.h"
 #include "ns3/data-rate.h"
 #include "ns3/string.h"
+#include "background-traffic-helper.h"
 
 #include <stdexcept>
 #include <algorithm>
@@ -572,7 +573,7 @@ Ptr<Node> CreateVictimServer(uint32_t victimAsn, const std::map<uint32_t, Ptr<No
     InternetStackHelper().Install(server);
 
     PointToPointHelper p2p;
-    p2p.SetDeviceAttribute("DataRate", StringValue("3Mbps"));
+    p2p.SetDeviceAttribute("DataRate", StringValue("1Gbps"));
     p2p.SetChannelAttribute("Delay", StringValue("10ms"));
 
     p2p.SetQueue(
@@ -657,15 +658,36 @@ Ptr<Node> CreateVictimServer(uint32_t victimAsn, const std::map<uint32_t, Ptr<No
 
 int main (int argc, char *argv[])
 {
-    GlobalValue::Bind(
-    "SimulatorImplementationType",
-    StringValue("ns3::RealtimeSimulatorImpl"));
+    // GlobalValue::Bind(
+    // "SimulatorImplementationType",
+    // StringValue("ns3::RealtimeSimulatorImpl"));
 
     GlobalValue::Bind(
     "ChecksumEnabled",
     BooleanValue(true));
 
     auto as_relation = ReadTopologyFromFile("as_topology.txt");
+
+    // 背景トラフィックがTCPのみコメントは外す
+    // // TCPの送受信バッファを16 MiBに拡大
+    // Config::SetDefault(
+    //     "ns3::TcpSocket::SndBufSize",
+    //     UintegerValue(16 * 1024 * 1024)
+    // );
+
+    // Config::SetDefault(
+    //     "ns3::TcpSocket::RcvBufSize",
+    //     UintegerValue(16 * 1024 * 1024)
+    // );
+
+    // // TCPのMSSを1460 bytesに変更
+    // Config::SetDefault(
+    //     "ns3::TcpSocket::SegmentSize",
+    //     UintegerValue(1460)
+    // );
+
+
+
     
     std::map<uint32_t, Ptr<Node>> asNodes;
     for (const auto& [asn, neighbors] : as_relation) {
@@ -698,7 +720,7 @@ int main (int argc, char *argv[])
 
 
     PointToPointHelper p2p;
-    p2p.SetDeviceAttribute ("DataRate", StringValue ("3Mbps"));
+    p2p.SetDeviceAttribute ("DataRate", StringValue ("1Gbps"));
     p2p.SetChannelAttribute ("Delay", StringValue ("10ms"));
 
     p2p.SetQueue(
@@ -850,132 +872,207 @@ int main (int argc, char *argv[])
 
     routingTableGenerator(targetdir, asNodes, asinterfaces);
 
-    SetupTapConnections(tapnode, asNodes, asPrefixes);
+    // SetupTapConnections(tapnode, asNodes, asPrefixes);
 
     std::cout << "finish setting routing tables" << std::endl;
 
 
+
+
+
+    // ===== Background Traffic =====
+
+    // AS番号 -> ホストIP
+    std::map<uint32_t, Ipv4Address> hostAddresses;
+
+    for (const auto& [asn, prefix] : asPrefixes)
+    {
+        hostAddresses.emplace(
+            asn,
+            Ipv4Address(prefix.network.Get() + 1)
+        );
+    }
+
+    // 被害AS番号 -> Serverノード
+    std::map<uint32_t, Ptr<Node>> backgroundVictimServers;
+
+    // 被害AS番号 -> ネットワークアドレス
+    std::map<uint32_t, Ipv4Address> victimNetworks;
+
+    for (size_t i = 0; i < experiment.targets.size(); ++i)
+    {
+        uint32_t asn =
+            std::stoul(experiment.targets[i].asNumber.substr(2));
+
+        backgroundVictimServers.emplace(asn, victimServers.at(i));
+        victimNetworks.emplace(asn, asPrefixes.at(asn).network);
+    }
+
+    // 背景通信の設定
+    background::Options bg;
+
+    bg.csvFile = "ns3_background_test.csv";
+    bg.victimAsn = 12975;
+    bg.victimTargetOffset = 8;
+    bg.victimTargetCount = 1024;
+
+    bg.port = 50000;
+    bg.packetSize = 1000;
+
+    bg.startTime = 1.0;
+    bg.stopTime = experiment.simulationDuration;
+
+    // テストCSVは10組
+    bg.maxFlows = 10;
+
+    // 背景通信の生成
+    auto bgStats = background::Install(
+        bg,
+        asNodes,
+        hostAddresses,
+        backgroundVictimServers,
+        victimNetworks
+    );
+
+    std::cout << "===== Background Traffic =====" << std::endl;
+    std::cout << "Scanned: " << bgStats.scanned << std::endl;
+    std::cout << "Installed: " << bgStats.installed << std::endl;
+    std::cout << "Sinks: " << bgStats.sinks << std::endl;
+    std::cout << "Requested rate: "
+            << static_cast<double>(bgStats.requestedRateBps)
+            << " bps" << std::endl;
+
+
+
+
+
+    // ===== Attack traffic =====
     // Carpet-bombing: 固定256宛先へのTCP SYN送信
     // ===== NetRadar-style Carpet-bombing =====
 
-    const uint32_t simultaneousTargets = experiment.carpetBombing.simultaneousTargets;
-    const uint32_t candidateTargets = experiment.carpetBombing.candidateTargets;
-    const uint32_t targetOffset = experiment.carpetBombing.targetOffset;
+    // const uint32_t simultaneousTargets = experiment.carpetBombing.simultaneousTargets;
+    // const uint32_t candidateTargets = experiment.carpetBombing.candidateTargets;
+    // const uint32_t targetOffset = experiment.carpetBombing.targetOffset;
 
-    // YAMLのCIDR表記からネットワークアドレスを取得
-    std::string prefix = experiment.carpetBombing.targetPrefix;
-    std::string networkAddress = prefix.substr(0, prefix.find('/'));
-    Ipv4Address targetNetwork(networkAddress.c_str());
+    // // YAMLのCIDR表記からネットワークアドレスを取得
+    // std::string prefix = experiment.carpetBombing.targetPrefix;
+    // std::string networkAddress = prefix.substr(0, prefix.find('/'));
+    // Ipv4Address targetNetwork(networkAddress.c_str());
 
-    // 各攻撃者ASの総送信レート
-    const uint64_t totalRateBps = experiment.carpetBombing.totalRateBps;
+    // // 各攻撃者ASの総送信レート
+    // const uint64_t totalRateBps = experiment.carpetBombing.totalRateBps;
 
-    // 各宛先に均等分配
-    const uint64_t ratePerTarget = totalRateBps / simultaneousTargets;
-    const double attackStart = experiment.carpetBombing.attackStart;
-    const double targetSwitchPeriod = experiment.carpetBombing.targetSwitchDuration;
+    // // 各宛先に均等分配
+    // const uint64_t ratePerTarget = totalRateBps / simultaneousTargets;
+    // const double attackStart = experiment.carpetBombing.attackStart;
+    // const double targetSwitchPeriod = experiment.carpetBombing.targetSwitchDuration;
 
-    // ===== Scheduler初期化 =====
+    // // ===== Scheduler初期化 =====
 
-    CarpetTargetScheduler carpetScheduler;
+    // CarpetTargetScheduler carpetScheduler;
 
-    carpetScheduler.network = targetNetwork;
-    carpetScheduler.offset = targetOffset;
-    carpetScheduler.candidateCount = candidateTargets;
-    carpetScheduler.activeCount = simultaneousTargets;
-    carpetScheduler.switchPeriod = targetSwitchPeriod;
-    carpetScheduler.stopTime = experiment.simulationDuration;
+    // carpetScheduler.network = targetNetwork;
+    // carpetScheduler.offset = targetOffset;
+    // carpetScheduler.candidateCount = candidateTargets;
+    // carpetScheduler.activeCount = simultaneousTargets;
+    // carpetScheduler.switchPeriod = targetSwitchPeriod;
+    // carpetScheduler.stopTime = experiment.simulationDuration;
 
-    carpetScheduler.log.open("carpet-target-selection.csv");
+    // carpetScheduler.log.open("carpet-target-selection.csv");
 
-    NS_ABORT_MSG_IF(!carpetScheduler.log.is_open(), "Cannot open target selection log");
+    // NS_ABORT_MSG_IF(!carpetScheduler.log.is_open(), "Cannot open target selection log");
 
-    carpetScheduler.log << "time_s,slot,target_ip\n";
+    // carpetScheduler.log << "time_s,slot,target_ip\n";
 
-    // ===== 最初の256宛先を抽選 =====
+    // // ===== 最初の256宛先を抽選 =====
 
-    auto initialTargets = DrawCarpetTargets(carpetScheduler);
+    // auto initialTargets = DrawCarpetTargets(carpetScheduler);
 
-    carpetScheduler.applications.reserve(attackerNodes.size());
-
-
-    // ===== 攻撃アプリケーション生成 =====
-
-    for (Ptr<Node> attacker : attackerNodes)
-    {
-        std::vector<Ptr<OnOffRetargetApplication>> attackerApps;
-
-        attackerApps.reserve(simultaneousTargets);
-
-        for (uint32_t targetIndex = 0; targetIndex < simultaneousTargets; ++targetIndex)
-        {
-            OnOffRetargetHelper attackHelper("ns3::Ipv4RawSocketFactory", InetSocketAddress(initialTargets[targetIndex], 0));
-
-            attackHelper.SetAttribute("RawProtocol", IntegerValue(6));
-
-            attackHelper.SetAttribute("AttackVector", IntegerValue(AttackVector::tcp_syn_flooding));
-
-            attackHelper.SetAttribute("SkipFirstOffTime", BooleanValue(true));
-
-            attackHelper.SetAttribute("SkipFirstScheduleAfterRemoteChange", BooleanValue(true));
-
-            attackHelper.SetAttribute("OnTime",StringValue("ns3::ConstantRandomVariable[Constant=200.0]"));
-
-            attackHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-
-            attackHelper.SetAttribute("DataRate", DataRateValue(DataRate(ratePerTarget)));
-
-            attackHelper.SetAttribute("PacketSize", UintegerValue(42));
-
-            // アプリケーションをインストール
-            ApplicationContainer apps = attackHelper.Install(attacker);
-
-            NS_ABORT_MSG_IF(apps.GetN() != 1, "Expected exactly one application");
-
-            Ptr<OnOffRetargetApplication> app = DynamicCast<OnOffRetargetApplication>(apps.Get(0));
-
-            NS_ABORT_MSG_IF(!app, "OnOffRetargetApplication cast failed");
-
-            // 後からSetRemote()を呼ぶため保持
-            attackerApps.push_back(app);
-
-            apps.Start(Seconds(attackStart));
-
-            apps.Stop(Seconds(experiment.simulationDuration));
-        }
-
-        carpetScheduler.applications.push_back(std::move(attackerApps));
-    }
+    // carpetScheduler.applications.reserve(attackerNodes.size());
 
 
-    // ===== 最初の宛先集合を記録 =====
+    // // ===== 攻撃アプリケーション生成 =====
 
-    Simulator::Schedule(
-        Seconds(attackStart),
-        &RecordCarpetTargets,
-        &carpetScheduler,
-        initialTargets);
+    // for (Ptr<Node> attacker : attackerNodes)
+    // {
+    //     std::vector<Ptr<OnOffRetargetApplication>> attackerApps;
+
+    //     attackerApps.reserve(simultaneousTargets);
+
+    //     for (uint32_t targetIndex = 0; targetIndex < simultaneousTargets; ++targetIndex)
+    //     {
+    //         OnOffRetargetHelper attackHelper("ns3::Ipv4RawSocketFactory", InetSocketAddress(initialTargets[targetIndex], 0));
+
+    //         attackHelper.SetAttribute("RawProtocol", IntegerValue(6));
+
+    //         attackHelper.SetAttribute("AttackVector", IntegerValue(AttackVector::tcp_syn_flooding));
+
+    //         attackHelper.SetAttribute("SkipFirstOffTime", BooleanValue(true));
+
+    //         attackHelper.SetAttribute("SkipFirstScheduleAfterRemoteChange", BooleanValue(true));
+
+    //         attackHelper.SetAttribute("OnTime",StringValue("ns3::ConstantRandomVariable[Constant=200.0]"));
+
+    //         attackHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+
+    //         attackHelper.SetAttribute("DataRate", DataRateValue(DataRate(ratePerTarget)));
+
+    //         attackHelper.SetAttribute("PacketSize", UintegerValue(42));
+
+    //         // アプリケーションをインストール
+    //         ApplicationContainer apps = attackHelper.Install(attacker);
+
+    //         NS_ABORT_MSG_IF(apps.GetN() != 1, "Expected exactly one application");
+
+    //         Ptr<OnOffRetargetApplication> app = DynamicCast<OnOffRetargetApplication>(apps.Get(0));
+
+    //         NS_ABORT_MSG_IF(!app, "OnOffRetargetApplication cast failed");
+
+    //         // 後からSetRemote()を呼ぶため保持
+    //         attackerApps.push_back(app);
+
+    //         apps.Start(Seconds(attackStart));
+
+    //         apps.Stop(Seconds(experiment.simulationDuration));
+    //     }
+
+    //     carpetScheduler.applications.push_back(std::move(attackerApps));
+    // }
 
 
-    // ===== 5秒後から宛先切り替え =====
+    // // ===== 最初の宛先集合を記録 =====
 
-    if (attackStart + targetSwitchPeriod < experiment.simulationDuration)
-    {
-        Simulator::Schedule(
-            Seconds(attackStart + targetSwitchPeriod),
-            &SwitchCarpetTargets,
-            &carpetScheduler);
-    }
+    // Simulator::Schedule(
+    //     Seconds(attackStart),
+    //     &RecordCarpetTargets,
+    //     &carpetScheduler,
+    //     initialTargets);
 
-    std::cout
-        << "Carpet-bombing applications installed: "
-        << attackerNodes.size() * simultaneousTargets
-        << std::endl;
+
+    // // ===== 5秒後から宛先切り替え =====
+
+    // if (attackStart + targetSwitchPeriod < experiment.simulationDuration)
+    // {
+    //     Simulator::Schedule(
+    //         Seconds(attackStart + targetSwitchPeriod),
+    //         &SwitchCarpetTargets,
+    //         &carpetScheduler);
+    // }
+
+    // std::cout
+    //     << "Carpet-bombing applications installed: "
+    //     << attackerNodes.size() * simultaneousTargets
+    //     << std::endl;
 
     // pcap設定
     // pcapを取得する場所（AS番号, Device ID）
     std::vector<std::pair<uint32_t, uint32_t>> capturePoints = {
-        {174, asinterfaces.at(174).at(1311).interfaceId}
+        {174, asinterfaces.at(174).at(1311).interfaceId},
+        {9299, asinterfaces.at(9299).at(8220).interfaceId},
+        {55836, asinterfaces.at(55836).at(9583).interfaceId},
+        
+        
+        
         /* carpet-bombing用に新たに設定しなおす必要がある
         {6507, asinterfaces.at(6507).at(9304).interfaceId},
         {6507, asinterfaces.at(6507).at(7473).interfaceId},
