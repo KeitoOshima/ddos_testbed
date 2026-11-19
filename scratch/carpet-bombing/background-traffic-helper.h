@@ -16,12 +16,21 @@ namespace background {
 struct Options {
     std::string csvFile = "ns3_background.csv";
     uint16_t port = 50000;
+
+    // Existing fixed-size setting (baseline)
     uint32_t packetSize = 1000;
+
+    // New variable packet size settings
+    bool randomPacketSize = true;
+    uint32_t minPacketSize = 64;
+    uint32_t maxPacketSize = 1472;
+
     double startTime = 1.0;
     double stopTime = 600.0;
-    // 0 = no limit; rows are taken in file order (not a random sample).
+
     uint64_t maxFlows = 0;
     uint32_t seed = 20261116;
+
     uint32_t victimAsn = 12975;
     uint32_t victimTargetOffset = 8;
     uint32_t victimTargetCount = 1024;

@@ -11,6 +11,7 @@
 #include "ns3/nstime.h"
 #include <fstream>
 #include <iostream>
+#include <chrono>
 #include <map>
 #include <string>
 #include <vector>
@@ -573,7 +574,7 @@ Ptr<Node> CreateVictimServer(uint32_t victimAsn, const std::map<uint32_t, Ptr<No
     InternetStackHelper().Install(server);
 
     PointToPointHelper p2p;
-    p2p.SetDeviceAttribute("DataRate", StringValue("1Gbps"));
+    p2p.SetDeviceAttribute("DataRate", StringValue("10Gbps"));
     p2p.SetChannelAttribute("Delay", StringValue("10ms"));
 
     p2p.SetQueue(
@@ -720,7 +721,7 @@ int main (int argc, char *argv[])
 
 
     PointToPointHelper p2p;
-    p2p.SetDeviceAttribute ("DataRate", StringValue ("1Gbps"));
+    p2p.SetDeviceAttribute ("DataRate", StringValue ("10Gbps"));
     p2p.SetChannelAttribute ("Delay", StringValue ("10ms"));
 
     p2p.SetQueue(
@@ -911,7 +912,7 @@ int main (int argc, char *argv[])
     // 背景通信の設定
     background::Options bg;
 
-    bg.csvFile = "ns3_background_test.csv";
+    bg.csvFile = "ns3_background.csv";
     bg.victimAsn = 12975;
     bg.victimTargetOffset = 8;
     bg.victimTargetCount = 1024;
@@ -923,7 +924,7 @@ int main (int argc, char *argv[])
     bg.stopTime = experiment.simulationDuration;
 
     // テストCSVは10組
-    bg.maxFlows = 10;
+    bg.maxFlows = 0;
 
     // 背景通信の生成
     auto bgStats = background::Install(
@@ -1070,6 +1071,7 @@ int main (int argc, char *argv[])
         {174, asinterfaces.at(174).at(1311).interfaceId},
         {9299, asinterfaces.at(9299).at(8220).interfaceId},
         {55836, asinterfaces.at(55836).at(9583).interfaceId},
+        {137409, asinterfaces.at(137409).at(28761).interfaceId},
         
         
         
@@ -1143,7 +1145,20 @@ int main (int argc, char *argv[])
     Simulator::Stop(Seconds(experiment.simulationDuration));
 
     std::cout << "Starting simulation..." << std::endl;
+
+
+    auto start = std::chrono::steady_clock::now();
+
     Simulator::Run();
+
+    auto end = std::chrono::steady_clock::now();
+
+    double elapsed =
+        std::chrono::duration<double>(end - start).count();
+
+    std::cout << "[PERF] Simulator::Run(): "
+            << elapsed << " seconds" << std::endl;
+
     Simulator::Destroy();
 
     return 0;
